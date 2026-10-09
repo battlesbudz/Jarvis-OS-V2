@@ -101,3 +101,23 @@ JSON includes `replyMetrics` with per-saved-response TTFT, speech-end-to-playbac
 The [October 2 phone screenshot baseline](../benchmarks/2026-10-02/README.md) retains seven observed replies and original evidence for future comparisons. Build/model/input-route provenance is unknown for those screenshots, so this is descriptive history, not a controlled comparison.
 
 Clipboard JSON uses compact serialization without dropping fields or samples; saved/shared JSON stays formatted. A five-attempt build-886 export supplied by Justin was 450,099 formatted bytes versus 269,840 compact bytes, demonstrating why copy should not spend the clipboard limit on whitespace.
+
+### Build 1242 copy-parts dialog discovery repair
+
+[Build 1242](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37948639302)
+at `5e79bc22056eba7d9f80b5a512d6abf86138e388` passed 1904 release JVM tests,
+both signed APK builds and the packaged native-page audit. Its API 30 and API 35
+main instrumentation runs each executed 81 tests with exactly one failure:
+test45 could not discover `pipeline_benchmark_part_copy`. Retained failure
+hierarchies show the whole-report dialog and the visible “Copy part 1” button,
+but no resource IDs anywhere in that separate dialog semantics tree.
+
+The repair enables `testTagsAsResourceId` at `BenchmarkExportDialog`'s own
+semantics root, matching the other benchmark dialogs. Activity-screen semantics
+are not inherited across the dialog window. The existing test45 copy-part,
+clipboard bounds, all-turn content, pending-picker ownership, cancellation,
+repeated save/share and privacy assertions remain unchanged. No timeout, test
+count or acceptance rule is relaxed. The failed run remains failed; actual
+resource-ID discovery and all subsequent export assertions must pass in the
+next exact-head full Android matrix. A visible button in a failure screenshot
+alone does not establish a successful clipboard/save/share journey.

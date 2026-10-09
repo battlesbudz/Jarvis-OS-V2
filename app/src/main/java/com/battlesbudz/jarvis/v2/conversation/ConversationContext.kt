@@ -33,6 +33,25 @@ internal class ConversationContextPreparation(
     private val references: ConversationReferences,
     private val diagnostics: ConversationDiagnostics
 ) {
+    /** Pure preview for direct audio only: no routing effects, token adoption,
+     * receipt consumption, history cutoff, memory capture, lookup or native reset. */
+    fun previewDirectAudio(builder: com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder):
+        com.battlesbudz.jarvis.v2.voice.NativeVoicePromptPreview? {
+        val limit = ConversationPrompt.contextLimit(modelSession.selectedModel().contextTokens, false)
+        val prompt = GemmaAudioInputPolicy.REQUEST
+        val context = memory.approvedSnapshot(prompt, (limit / 5).coerceIn(240, 1_200)) ?: return null
+        if (!context.isCurrent()) return null
+        val history = historyAfterCutoff().filterNot { GemmaAudioInputPolicy.isPendingTranscript(it.role, it.text) }
+        val preview = ConversationPrompt(builder, true, { modelSession.selectedModel().contextTokens }, { context })
+        preview.continuityContext = TurnContinuity.section(prompt, history.map { it.role to it.text },
+            maxChars = (limit / 6).coerceIn(300, 1600))
+        // Direct audio does not capture provisional text into memory. Preserve
+        // the ordinary null-receipt instruction without consuming any receipt.
+        preview.captureContext = MemoryCaptureAcknowledgment.section(null)
+        val exact = preview.assemble(prompt, null, history, true, null, null, null, limit).text
+        return com.battlesbudz.jarvis.v2.voice.NativeVoicePromptPreview(exact, context::isCurrent)
+    }
+
     suspend fun prepare(request: ConversationTurnRequest, routed: RoutedConversation,
                         reply: ConversationReply, turnPrompt: ConversationPrompt, contextLimit: Int,
                         onMemoryBound: (MemoryDeliveryFence.Ticket, MemoryTurnContext) -> Unit): PreparedConversation? {

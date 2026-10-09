@@ -14,6 +14,15 @@ internal class FollowupPlaybackEcho {
     @Synchronized fun ended(atMs: Long) { endedAtMs = atMs }
     @Synchronized fun clear() { reference.clear(); endedAtMs = null }
 
+    /** Conservative eligibility for omitting display-only final ASR, not echo acceptance. */
+    @Synchronized fun needsFinalTranscript(speechStartedAtMs: Long?): Boolean {
+        if (reference.isBlank()) return false
+        val end = endedAtMs ?: return true
+        val onset = speechStartedAtMs ?: return true
+        // Unknown, overlapping and the full existing 350ms tail retain lexical verification.
+        return onset <= end || onset - end <= 350
+    }
+
     @Synchronized fun rejects(transcript: String, speechStartedAtMs: Long?): Boolean {
         val end = endedAtMs ?: return false
         val onset = speechStartedAtMs ?: return false

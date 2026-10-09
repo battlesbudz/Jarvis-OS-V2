@@ -24,6 +24,7 @@ internal class VoiceTurnFinalizer(
 ) {
     suspend fun close(request: VoiceTurnRequest, lifetime: VoiceTurnLifetime, cancelled: Boolean) = withContext(NonCancellable) {
         var encoderDrained = lifetime.nativeAudioCapture == null
+        lifetime.nativeSpeculation?.revoke(com.battlesbudz.jarvis.v2.voice.SpeculativeResponseCoordinator.Invalidation.STOP)
         lifetime.nativeAudioCapture?.requestCancel()
         if (cancelled && !actions.queue.hasUnfinished()) { conversation.job?.cancel(); conversation.job?.join() }
         try {
@@ -32,7 +33,9 @@ internal class VoiceTurnFinalizer(
             lifetime.activePumpTypedInput.getAndSet(null)?.let(typedInputs::terminalize)
             runCatching { lifetime.capture?.stop() }
             runCatching { lifetime.microphone?.stop() }
-            encoderDrained = runCatching { lifetime.nativeAudioCapture?.closeAndDrain() ?: true }.getOrDefault(false)
+            val speculationDrained = runCatching { lifetime.nativeSpeculation?.closeAndDrain() ?: true }.getOrDefault(false)
+            val captureDrained = runCatching { lifetime.nativeAudioCapture?.closeAndDrain(releaseArtifact = speculationDrained) ?: true }.getOrDefault(false)
+            encoderDrained = speculationDrained && captureDrained
             if (encoderDrained) lifetime.nativeAudioArtifact?.close()
             lifetime.preparation?.close()
             if (!actions.queue.hasUnfinished()) nativeState.engine?.onPromptSubmitted = { _, _ -> }
@@ -67,9 +70,8 @@ internal class VoiceTurnFinalizer(
             } finally {
                 // Accepted process work may already own the transferred lease and
                 // its busy engine. That is not this turn's failed native borrower.
-                if (encoderDrained && (!lifetime.modelLease.owned || nativeState.engine?.nativeResourcesSafeToRelease != false)) {
-                    lifetime.modelLease.close()
-                } else {
+                lifetime.modelLease.finishNativeDrain(encoderDrained,
+                    nativeState.engine?.nativeResourcesSafeToRelease != false) {
                     NativeVoiceQuarantine.retain(lifetime.modelLease, lifetime.nativeAudioCapture, nativeState.engine)
                     recorder.recordImportant("Native voice drain failed; model ownership retained, reuse disabled")
                 }

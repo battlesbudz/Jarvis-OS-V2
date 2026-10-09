@@ -25,6 +25,14 @@ internal class VoiceTurnModelLease(private val acquire: () -> Boolean, private v
         return true
     }
 
+    /** All encoder/speculative borrowers must drain, even when the engine itself
+     * reports idle. Failed cleanup retains admission instead of rearming a turn. */
+    fun finishNativeDrain(nativeBorrowersDrained: Boolean, engineSafeToRelease: Boolean,
+                          quarantine: () -> Unit) {
+        if (nativeBorrowersDrained && (!owned || engineSafeToRelease)) close()
+        else quarantine()
+    }
+
     fun close() {
         if (owned) {
             owned = false

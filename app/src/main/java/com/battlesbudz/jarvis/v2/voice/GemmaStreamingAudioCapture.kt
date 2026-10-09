@@ -73,14 +73,29 @@ internal class GemmaStreamingAudioCapture(
         } finally { pcm.fill(0) }
     }
 
+    /** Capture has stopped feeding this exact worker at an explicit immutable boundary.
+     * A sealed proposal alone never authorizes publication or replaces final capture. */
+    suspend fun sealFrozenCandidate(proposal: NativePauseProposal): CompletedCapture {
+        val pcm = proposal.pcm16()
+        try {
+            check(valid.get() && turnContext.get()?.invoke() == true) { "native_audio_stale_proposal" }
+            val result = worker.sealFrozenCandidate(pcm)
+            check(valid.get() && turnContext.get()?.invoke() == true) { "native_audio_stale_proposal" }
+            return CompletedCapture(result.content, result.timing)
+        } finally { pcm.fill(0) }
+    }
+
+    /** Keep the turn artifact lease until final cleanup; only the candidate worker closes. */
+    suspend fun drainFrozenWorker(): Boolean = worker.closeAndDrain()
+
     fun requestCancel() { valid.set(false); turnContext.set(null); worker.requestCancel() }
 
     /** Caller invokes under NonCancellable, then releases the artifact/model lease
      * only on true. False is permanent quarantine for this turn. */
-    suspend fun closeAndDrain(): Boolean {
+    suspend fun closeAndDrain(releaseArtifact: Boolean = true): Boolean {
         requestCancel()
         val safe = worker.closeAndDrain()
-        if (safe) artifact.close()
+        if (safe && releaseArtifact) artifact.close()
         return safe
     }
 

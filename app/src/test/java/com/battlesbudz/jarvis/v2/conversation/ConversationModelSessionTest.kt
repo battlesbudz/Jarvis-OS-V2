@@ -71,4 +71,20 @@ class ConversationModelSessionTest {
         assertEquals(9_000, f.session.characters)
         assertTrue(f.session.hasContext)
     }
+    @Test fun nativeMutationFenceRunsBeforeResetOrCloseAndFailurePreservesOwnership() = runBlocking {
+        for (close in listOf(false, true)) {
+            val f = Fixture(); f.state.characters = 500
+            f.session.beforeNativeMutation = { error("speculative native drain failed") }
+            try { if (close) f.session.close() else f.session.reset(); fail("unsafe mutation") }
+            catch (expected: IllegalStateException) { assertEquals("speculative native drain failed", expected.message) }
+            assertEquals(500, f.state.characters); assertTrue(f.state.hasContext)
+        }
+    }
+
+    @Test fun unchangedHistoryDoesNotDrainPendingSpeculation() = runBlocking<Unit> {
+        val f = Fixture()
+        f.session.beforeNativeMutation = { fail("read-only unchanged context may keep running draft") }
+        f.session.prepareHistory(listOf(ChatEntry("You", "A stable call turn")), false, 100, 10_000)
+    }
+
 }

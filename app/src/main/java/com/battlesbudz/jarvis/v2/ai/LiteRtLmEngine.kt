@@ -228,13 +228,14 @@ class LiteRtLmEngine(
     suspend fun generateSealedAudio(
         prompt: String,
         artifact: Content.SealedAudioEmbeddings,
-        onToken: (String) -> Unit
+        onToken: (String) -> Unit,
+        maxPendingCallbacks: Int = Channel.UNLIMITED
     ): GenerationResult {
         require(audioEnabled && modelSpec.supportsAudio) { "$modelId does not support native audio input." }
         val pcmBytes = artifact.pcmSampleCount * 2
         onPromptSubmitted(prompt, pcmBytes)
         return generateWithContents(Contents.of(Content.Text(prompt), artifact), onToken,
-            prompt.length, "sealed_audio_text", audioBytes = pcmBytes)
+            prompt.length, "sealed_audio_text", audioBytes = pcmBytes, maxPendingCallbacks = maxPendingCallbacks)
     }
 
     private suspend fun generateWithContents(
@@ -245,9 +246,10 @@ class LiteRtLmEngine(
         audioBytes: Int = 0,
         imageBytes: Int = 0,
         purpose: PipelineBenchmarkPurpose = benchmarkPurpose,
-        sink: (PipelineBenchmarkSubmission) -> Unit = onBenchmarkSubmission
+        sink: (PipelineBenchmarkSubmission) -> Unit = onBenchmarkSubmission,
+        maxPendingCallbacks: Int = Channel.UNLIMITED
     ): GenerationResult = generateWithMessage(Message.user(contents), onToken,
-        promptChars, mode, audioBytes, imageBytes, purpose, sink)
+        promptChars, mode, audioBytes, imageBytes, purpose, sink, maxPendingCallbacks)
 
     suspend fun sendToolResult(
         call: ToolCall,
@@ -275,8 +277,10 @@ class LiteRtLmEngine(
         audioBytes: Int = 0,
         imageBytes: Int = 0,
         purpose: PipelineBenchmarkPurpose = benchmarkPurpose,
-        sink: (PipelineBenchmarkSubmission) -> Unit = onBenchmarkSubmission
+        sink: (PipelineBenchmarkSubmission) -> Unit = onBenchmarkSubmission,
+        maxPendingCallbacks: Int = Channel.UNLIMITED
     ): GenerationResult {
+        require(maxPendingCallbacks == Channel.UNLIMITED || maxPendingCallbacks in 1..128)
         checkNativeWorkerThread()
         currentCoroutineContext().ensureActive()
         val startedAt = System.nanoTime()
@@ -294,7 +298,7 @@ class LiteRtLmEngine(
         var benchmarkError: Throwable? = null
         var nativeTokens: NativeTokenTelemetry? = null
 
-        val responses = Channel<Message>(Channel.UNLIMITED)
+        val responses = Channel<Message>(maxPendingCallbacks)
         val nativeTurn = lifecycle.beginTurn()
         val activeConversation = nativeTurn.conversation
         val ownerJob = currentCoroutineContext()[Job]
@@ -312,7 +316,8 @@ class LiteRtLmEngine(
                     benchmark.measurement.callback(message.toString().isNotEmpty())
                     if (firstCallbackAt.compareAndSet(0L, callbackAt))
                         progressSink(InferenceProgress(firstRawTokenAtMs = callbackAt / 1_000_000))
-                    responses.trySend(message)
+                    if (responses.trySend(message).isFailure)
+                        responses.close(IllegalStateException("native_response_queue_capacity"))
                 }
                 override fun onDone() = nativeCallback {
                     try { benchmark.measurement.terminal() } finally { responses.close() }

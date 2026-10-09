@@ -24,6 +24,7 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
     private val directWork = AsrRecognitionWorkAccumulator("whisper_batch_decode_callback_wall")
     private val streaming = if (live) AsyncWhisperSession(::decode, ::releaseRecognizer, log) else null
     override val recognitionWorkMetrics get() = streaming?.recognitionWorkMetrics ?: directWork.snapshot()
+    override val completedEndpointCue get() = streaming?.completedEndpointCue
     override val noTextSilenceMs: Long get() = 900
     override fun prepareForBoundedProbe(maxAudioMs: Long): String {
         check(streaming == null && audio.sizeBytes() == 0L)
@@ -40,6 +41,8 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
         audio.append(speechGate.accept(pcm))
         return ""
     }
+    override fun retireIdleCaption(): Boolean = !closed && streaming?.retireIdleCaption() == true
+    override fun resumeRetiredCaption(): Boolean = !closed && streaming?.resumeRetiredCaption() == true
     override fun finish(): String {
         if (streaming != null) return streaming.finish()
         val snapshot = audio.snapshot()

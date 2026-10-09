@@ -56,7 +56,8 @@ internal data class FinalizedVoiceTurn(
     val endpointAt: Long,
     val initialActionPlan: ActionTurnPlan,
     val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null,
-    val nativeAudioTiming: com.battlesbudz.jarvis.v2.voice.NativeAudioCaptureTiming? = null
+    val nativeAudioTiming: com.battlesbudz.jarvis.v2.voice.NativeAudioCaptureTiming? = null,
+    val nativeSpeculation: com.battlesbudz.jarvis.v2.voice.NativeVoiceSpeculation? = null
 )
 
 /** Intentional quiet/echo/control exits are distinct from stage exceptions/cancellation. */

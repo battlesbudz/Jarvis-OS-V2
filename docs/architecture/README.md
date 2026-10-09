@@ -81,7 +81,13 @@ Setup first resolves the selected catalog entry and installs verified files thro
 `ModelStore`/the worker. Text requests enter the shared conversation path directly.
 Voice first acquires call resources, captures/recognizes final input, and enters
 that same path; direct Gemma audio and diagnostic comparisons have explicit input
-modes. A live ASR caption is not authority for an unfinished phone action.
+modes. A live ASR caption is not authority for an unfinished phone action. Eligible clean
+ordinary native-Gemma capture can atomically retire an already-idle Whisper
+caption stream without a new final decode; short, quiet, playback-tail-risk,
+segmented and busy cases keep final ASR. The same serialized close returns its
+one recognizer lease before authoritative reply-interruption probes. No detached
+caption owner or endpoint-threshold change is introduced. See the
+[idle-caption contract](../verification/idle-native-caption-finalization-2026-10-09.md).
 
 A turn prepares bounded history, memory and references, chooses a validated action
 or inference path, then publishes tokens/results through its delivery boundary.
@@ -161,7 +167,19 @@ owns native encoder calls; discarded candidates get fresh owners. Capture joins,
 complete PCM count/hash and native output counts gate immutable sealed content.
 The encoder closes before Conversation prefill. Static comparison trials and
 previously recorded corrections keep their raw-audio path; Piper-overlap encoder
-capture and live LLM prefill are later, separate gates.
+capture remains a separate gate. Clean-pause native answer speculation uses the
+explicit frozen-input contract below; undecidable captures retain this joined path.
+
+`NativeVoiceSpeculation` and `SpeculativeResponseCoordinator` own a bounded,
+effect-free native pause draft under that same turn/model lease. Capture provides
+an explicit frozen boundary and a joined raw-coverage certificate; the complete
+original WAV remains the fallback. The encoder checked-closes before draft
+Conversation inference. Exact final prompt/input matching releases held tokens
+through ordinary Conversation filters; any required memory/history/native reset
+first invalidates and drains the draft. `NativeSpeculativeAudioDriver` owns this
+encoder-to-Conversation sequence. No speculative TTS, action, history or memory
+publication occurs. See [native speculative response](../native-speculative-response.md)
+for bounds, fallback/quarantine and unmeasured device latency acceptance.
 
 The owner also records the first accepted nonempty PCM and each successful,
 validated encoder step under its existing candidate gate. A bounded immutable
@@ -278,3 +296,12 @@ bounded; full JSON/CSV keep their existing schemas. `BenchmarkExportControls`
 owns a frozen export and picker/copy state; `BenchmarkExportFiles` owns only
 UTF-8 ContentResolver/FileProvider transport, MIME types and unique filenames.
 These components cannot start model work or change retained measurements.
+
+`voice/NativePauseCapture` owns the optional immutable frozen-prefix proposal and
+raw completed-frame coverage certificate, distinct from the complete recording
+owned by `AudioTurnCapture`. `NativePauseEndpointPolicy` and the completed-caption
+cue tracker own only guarded native endpoint eligibility; they cannot publish
+responses or alter speech/latency clocks. `CaptureSpeechQueue` forwards raw VAD
+before noise gating so weak continuation revokes speculation immediately. The
+[contract](../verification/native-frozen-pause-capture-2026-10-09.md) documents the
+full-WAV fallback, spent-encoder fence and conservative unresolved-frame fallback.

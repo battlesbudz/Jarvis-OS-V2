@@ -9,12 +9,32 @@ class SegmentedTranscriber(
     private val text = UtteranceAccumulator()
     private val overlap = RollingAudioBuffer(maxDurationMs = 1200)
     private var segmentBytes = 0L
+    private var receivedBytes = 0L
+    private var engineInputStartSample = 0L
+    private var cueEngine: StreamingTranscriber? = null
+    private var cueRevision = Long.MIN_VALUE
+    private var endpointCueSequence = 0L
+    private var mappedCue: CompletedEndpointCue? = null
+    override val completedEndpointCue: CompletedEndpointCue? get() {
+        // A hard-overlap seam can suppress a new suffix. Never assign its new audio
+        // watermark to old committed words; segmented turns retain ordinary endpointing.
+        if (segments > 0) return null
+        val engine = current ?: return mappedCue
+        val cue = engine.completedEndpointCue ?: return mappedCue
+        if (engine !== cueEngine || cue.revision != cueRevision) {
+            cueEngine = engine; cueRevision = cue.revision
+            mappedCue = CompletedEndpointCue(++endpointCueSequence, text.partial(cue.text),
+                engineInputStartSample + cue.coveredAudioSamples)
+        }
+        return mappedCue
+    }
     private var speech = false
     private var silenceBytes = 0L
     private var segmentHadSpeech = false
     private var replay = byteArrayOf()
     private var closed = false
     private var sealed = false
+    private var captionRetired = false
     private var last = ""
     private var finalSegment = ""
     private val workLedger = AsrRecognitionWorkLedger()
@@ -32,10 +52,12 @@ class SegmentedTranscriber(
         check(!closed && !sealed)
         val engine = current ?: create().also {
             current = it
+            engineInputStartSample = (receivedBytes - replay.size) / 2
             if (replay.isNotEmpty()) { it.observeSpeech(true); it.accept(replay, allowPartial) }
             segmentBytes = replay.size.toLong(); replay = byteArrayOf()
             it.observeSpeech(speech)
         }
+        receivedBytes += pcm.size
         overlap.append(pcm)
         segmentBytes += pcm.size
         silenceBytes = if (speech) 0 else silenceBytes + pcm.size
@@ -59,6 +81,16 @@ class SegmentedTranscriber(
         }
         return last
     }
+    override fun retireIdleCaption(): Boolean {
+        // A segmented/uncertain request keeps complete final ASR and recovery behavior.
+        if (closed || sealed || segments != 0 || issue != null) return false
+        if (current?.retireIdleCaption() != true) return false
+        sealed = true
+        captionRetired = true
+        last = ""
+        finalSegment = ""
+        return true
+    }
     override fun finish(): String {
         check(!closed)
         if (!sealed) {
@@ -81,6 +113,14 @@ class SegmentedTranscriber(
     fun resumeAfterEndpoint() {
         check(sealed && !closed)
         val owned = current
+        if (captionRetired) {
+            // New speech invalidated the proposal during acoustic drain. There was no
+            // final ASR segment to commit: keep the original recognizer and full PCM.
+            check(owned?.resumeRetiredCaption() == true) { "Retired caption owner cannot resume." }
+            captionRetired = false
+            sealed = false
+            return
+        }
         if (owned != null) {
             text.commit(finalSegment, nextOverlaps = false)
             current = null

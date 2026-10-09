@@ -33,6 +33,8 @@ internal class ConversationModelSession(
     private val shortTermContext: ShortTermConversationContext,
     private val persistSummary: (String?) -> Unit
 ) {
+    /** Turn-local guard, installed only under Conversation's existing exclusive admission. */
+    var beforeNativeMutation: suspend () -> Unit = {}
     var hasContext: Boolean
         get() = state.hasContext
         set(value) { state.hasContext = value }
@@ -45,8 +47,8 @@ internal class ConversationModelSession(
     fun clearContextAccounting() { state.hasContext = false; state.characters = 0 }
     fun addCharacters(count: Int) { state.characters += count }
     fun clearSummary() { shortTermContext.clear() }
-    fun close() { state.engine?.close(); state.engine = null; clearContextAccounting() }
-    suspend fun reset() { state.engine?.resetConversation(); clearContextAccounting() }
+    suspend fun close() { beforeNativeMutation(); state.engine?.close(); state.engine = null; clearContextAccounting() }
+    suspend fun reset() { beforeNativeMutation(); state.engine?.resetConversation(); clearContextAccounting() }
 
     suspend fun prepare(imageAttached: Boolean, audioAttached: Boolean, voiceAttached: Boolean,
                         reply: ConversationReply): ConversationBackend {

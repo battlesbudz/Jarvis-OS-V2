@@ -243,4 +243,33 @@ class VoiceTurnModelLeaseTest {
         assertFalse(lease.owned)
         assertEquals(1, releases)
     }
+    @org.junit.Test fun failedSpeculativeOrEncoderDrainRetainsOwnedLeaseEvenWithIdleEngine() {
+        var releases = 0; var quarantines = 0
+        val lease = VoiceTurnModelLease({ true }, { releases++ })
+        org.junit.Assert.assertTrue(lease.acquireWhenIdle(true))
+        lease.finishNativeDrain(false, true) { quarantines++ }
+        org.junit.Assert.assertTrue(lease.owned)
+        org.junit.Assert.assertEquals(0, releases)
+        org.junit.Assert.assertEquals(1, quarantines)
+    }
+
+    @org.junit.Test fun successfulSpeculationCannotReleaseAnUndrainedNativeEngine() {
+        var releases = 0; var quarantines = 0
+        val lease = VoiceTurnModelLease({ true }, { releases++ })
+        lease.acquireWhenIdle(true)
+        lease.finishNativeDrain(true, false) { quarantines++ }
+        org.junit.Assert.assertTrue(lease.owned)
+        org.junit.Assert.assertEquals(0, releases)
+        org.junit.Assert.assertEquals(1, quarantines)
+    }
+
+    @org.junit.Test fun onlyBothSuccessfulDrainsReleaseTheLeaseExactlyOnce() {
+        var releases = 0
+        val lease = VoiceTurnModelLease({ true }, { releases++ })
+        lease.acquireWhenIdle(true)
+        repeat(2) { lease.finishNativeDrain(true, true) { error("must not quarantine") } }
+        org.junit.Assert.assertFalse(lease.owned)
+        org.junit.Assert.assertEquals(1, releases)
+    }
+
 }

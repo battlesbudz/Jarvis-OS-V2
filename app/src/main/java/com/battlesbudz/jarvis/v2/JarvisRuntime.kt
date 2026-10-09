@@ -654,7 +654,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             endCall = { endVoiceCall() }, returnToWake = ::returnToWakeListening,
             stopService = ::stopVoiceService, restartTurn = ::runVoiceTurn))
         val conversation = VoiceConversationAccess(VoiceConversationDispatch(::startConversation),
-            currentJob = { conversationJob }, resetConversation = ::resetNativeConversation)
+            currentJob = { conversationJob }, resetConversation = ::resetNativeConversation,
+            previewNativeAudioPrompt = conversationCoordinator::previewNativeAudioPrompt)
         val memory = VoiceMemoryAccess(memoryDeliveryFence, voiceMemoryDelivery, ::captureFinalMemory)
         val typedInputs = VoiceTypedInputOwnership(call)
         val createLease = { VoiceTurnModelLease(modelStore::tryBeginModelOperation, modelStore::endModelOperation) }

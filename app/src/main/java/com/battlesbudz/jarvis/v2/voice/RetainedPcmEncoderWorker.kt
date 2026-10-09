@@ -108,7 +108,14 @@ internal class RetainedPcmEncoderWorker<T : Any>(
     }
 
     /** Call only after capture.stop has joined and the complete PCM has passed admission. */
-    suspend fun sealAfterCaptureJoined(completePcm16: ByteArray): Completed<T> {
+    suspend fun sealAfterCaptureJoined(completePcm16: ByteArray): Completed<T> = sealCompleteCandidate(completePcm16)
+
+    /** Explicit capture-owned frozen boundary; no further PCM may reach this worker.
+     * The caller must separately certify the retained tail before answer promotion.
+     * This does not weaken count/hash/EOA or native checked-close validation. */
+    suspend fun sealFrozenCandidate(frozenPcm16: ByteArray): Completed<T> = sealCompleteCandidate(frozenPcm16)
+
+    private suspend fun sealCompleteCandidate(completePcm16: ByteArray): Completed<T> {
         try {
             synchronized(gate) {
                 checkAccepting()

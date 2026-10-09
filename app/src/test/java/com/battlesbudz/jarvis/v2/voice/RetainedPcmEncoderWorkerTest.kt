@@ -157,4 +157,26 @@ class RetainedPcmEncoderWorkerTest {
         }
         assertEquals(0, creates.get())
     }
+    @Test fun frozenCandidateUsesExactCountHashAndTerminatesEncoderBeforeHandoff() = runBlocking {
+        val encoder = FakeEncoder()
+        val owner = RetainedPcmEncoderWorker({ encoder }, { true })
+        val prefix = pcm(1, 2, 3)
+        owner.onPcm(prefix.copyOf())
+        val result = owner.sealFrozenCandidate(prefix)
+        assertEquals(3, result.pcmSampleCount); assertEquals(1, encoder.seals.get())
+        assertEquals(1, encoder.closes.get())
+        assertTrue(owner.closeAndDrain())
+        assertTrue(runCatching { owner.onPcm(pcm(4)) }.isFailure)
+    }
+
+    @Test fun frozenCandidateCannotSealEqualCountWrongPcmOrAnIncompletePrefix() = runBlocking {
+        for (candidate in listOf(pcm(1, 2, 4), pcm(1, 2))) {
+            val encoder = FakeEncoder()
+            val owner = RetainedPcmEncoderWorker({ encoder }, { true })
+            owner.onPcm(pcm(1, 2, 3))
+            assertTrue(runCatching { owner.sealFrozenCandidate(candidate) }.isFailure)
+            assertEquals(0, encoder.seals.get()); assertTrue(owner.closeAndDrain())
+        }
+    }
+
 }

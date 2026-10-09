@@ -15,7 +15,8 @@ internal class ConversationInput(
     private val textInput: IncrementalVoiceInput?,
     val imageBytes: ByteArray?,
     val attachedAudio: ByteArray?,
-    private val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null
+    private val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null,
+    private val nativeSpeculation: com.battlesbudz.jarvis.v2.voice.NativeVoiceSpeculation? = null
 ) {
     init {
         require(sealedVoiceAudio == null || directAudio && voiceAudio != null && textInput == null) {
@@ -24,12 +25,17 @@ internal class ConversationInput(
     }
     var incrementalFallbackUsed = false
         private set
-    val nativeConversationContainsTurn: Boolean get() = textInput == null || incrementalFallbackUsed
+    private var speculativeResultUsed = false
+    val nativeConversationContainsTurn: Boolean get() = !speculativeResultUsed && (textInput == null || incrementalFallbackUsed)
 
     suspend fun generate(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit,
                          onIncrementalFallback: (Throwable) -> Unit): GenerationResult = when {
-        directAudio -> if (sealedVoiceAudio != null) engine.generateSealedAudio(prompt, sealedVoiceAudio, onToken)
+        directAudio -> {
+            val prepared = nativeSpeculation?.promote(prompt, ordinaryReplyAccepted = true, onToken = onToken)
+            if (prepared != null) { speculativeResultUsed = true; prepared }
+            else if (sealedVoiceAudio != null) engine.generateSealedAudio(prompt, sealedVoiceAudio, onToken)
             else engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
+        }
         textInput != null -> {
             engine.onPromptSubmitted(prompt, 0)
             textInput.answerWithTextFallback(prompt, onToken) { error ->
@@ -45,12 +51,15 @@ internal class ConversationInput(
     }
 
     /** Retry keeps the authoritative direct-audio/image/file attachment, never a spent prefill. */
-    suspend fun retry(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit): GenerationResult = when {
+    suspend fun retry(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit): GenerationResult {
+        speculativeResultUsed = false
+        return when {
         directAudio -> if (sealedVoiceAudio != null) engine.generateSealedAudio(prompt, sealedVoiceAudio, onToken)
             else engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
         attachedAudio != null -> engine.generateAudio(prompt, attachedAudio, onToken)
         imageBytes != null -> engine.generate(prompt, imageBytes, onToken)
         else -> engine.generate(prompt, onToken)
+        }
     }
 }
 

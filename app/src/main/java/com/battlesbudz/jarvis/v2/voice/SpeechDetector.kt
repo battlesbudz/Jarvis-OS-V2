@@ -2,7 +2,8 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Classification of audio content; loudness is only diagnostic information. */
 data class SpeechDecision(val isSpeech: Boolean, val probability: Float,
-    val speechSamples: Int? = null, val strongSpeechSamples: Int? = null)
+    val speechSamples: Int? = null, val strongSpeechSamples: Int? = null,
+    val rawCoverage: RawVadCoverage? = null)
 
 interface SpeechDetector : AutoCloseable {
     fun accept(pcm: ByteArray): SpeechDecision
@@ -20,6 +21,9 @@ class FrameSpeechDetector(
     private var lastProbability = 0f
     private var consecutiveStrongFrames = 0
     private var closed = false
+    private var receivedPcmBytes = 0L
+    private var classifiedSamples = 0L
+    private var quietFromSample = 0L
 
     override fun accept(pcm: ByteArray): SpeechDecision {
         check(!closed) { "Speech detector has been released." }
@@ -28,6 +32,8 @@ class FrameSpeechDetector(
         var strongSamples = 0
         var maxProbability = 0f
         var computed = false
+        var completedFrames = 0
+        receivedPcmBytes += pcm.size
         for (byte in pcm) {
             val low = lowByte
             if (low == null) {
@@ -42,6 +48,9 @@ class FrameSpeechDetector(
                 check(probability.isFinite() && probability in 0f..1f) {
                     "Speech detector returned an invalid probability."
                 }
+                classifiedSamples += 512
+                completedFrames++
+                if (probability >= .15f) quietFromSample = classifiedSamples
                 lastProbability = probability
                 maxProbability = maxOf(maxProbability, probability)
                 computed = true
@@ -61,7 +70,8 @@ class FrameSpeechDetector(
                 frameSize = 0
             }
         }
-        return SpeechDecision(confirmedSpeech, if (computed) maxProbability else lastProbability, speechSamples, strongSamples)
+        return SpeechDecision(confirmedSpeech, if (computed) maxProbability else lastProbability, speechSamples, strongSamples,
+            RawVadCoverage(receivedPcmBytes, classifiedSamples, quietFromSample, completedFrames))
     }
 
     override fun close() {

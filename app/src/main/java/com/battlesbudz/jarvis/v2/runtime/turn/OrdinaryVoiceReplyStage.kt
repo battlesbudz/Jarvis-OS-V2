@@ -42,6 +42,14 @@ internal class OrdinaryVoiceReplyStage(
                 val publicationGuard = com.battlesbudz.jarvis.v2.memory.MemoryPublicationGuard(memory.fence)
                 fun publishBound(block: () -> Unit): Boolean = publicationGuard.publish(block)
                 val response = coordinator.processTurn(if (prepared.directAudioTurn) com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.PENDING_TRANSCRIPT else finalized.transcript, replyId = request.asrTurnId, publish = ::publishBound) { onToken ->
+                    finalized.nativeSpeculation?.bindConfirmedTiming { timing ->
+                        observation.telemetry.acceptNativeAudioTiming(timing)
+                        timing.metrics()?.let { measured ->
+                            call.controller.updateReplyMetrics(prepared.expectedCallId, request.asrTurnId) {
+                                it.copy(nativeAudioTiming = measured)
+                            }
+                        }
+                    }
                     finalized.nativeAudioTiming?.let { timing ->
                         observation.telemetry.acceptNativeAudioTiming(timing)
                         timing.metrics()?.let { measured ->
@@ -98,7 +106,8 @@ internal class OrdinaryVoiceReplyStage(
                             directVoiceAudio = prepared.directAudioTurn,
                             comparison = request.comparison,
                             benchmarkCapture = observation.benchmark,
-                            sealedVoiceAudio = finalized.sealedVoiceAudio
+                            sealedVoiceAudio = finalized.sealedVoiceAudio,
+                            nativeSpeculation = finalized.nativeSpeculation
                         ), ConversationCallbacks(
                             onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
                                 call.controller.updateReplyMetrics(prepared.expectedCallId, request.asrTurnId, durable = durable) { current ->
@@ -165,6 +174,11 @@ internal class OrdinaryVoiceReplyStage(
                     }
                     val text = completed.await()
                     if (!interruptionTest && finalized.recognitionIssue == null) conversation.job?.join()
+                    // Job.join does not rethrow a failed child. In particular an idle
+                    // Conversation cannot certify a separately quarantined encoder.
+                    // Keep this fence outside the caption try/finally: neither its
+                    // initial nor final reset may run unless the exact owner drained.
+                    finalized.nativeSpeculation?.beforeNativeMutation()
                     if (prepared.directAudioTurn && request.comparison == null && finalized.recognitionIssue == null) {
                         observation.benchmark.mark("answer_generation_finished")
                         lifetime.speechChunks.close() // Caption inference must not hold answer EOF/audio drain.

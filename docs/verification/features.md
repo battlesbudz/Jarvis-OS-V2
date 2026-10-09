@@ -1,5 +1,19 @@
 # Feature and acceptance map
 
+## Idle native-caption finalization — 9 October 2026
+
+Eligible clean ordinary Gemma audio capture skips a new endpoint-final Whisper
+decode only when the existing worker is already idle. Busy, short, quiet,
+playback-tail/unknown-timing, segmented and text-ASR cases retain final recognition.
+No endpoint threshold, native pin/oracle, recognizer count, authoritative barge
+verification or resource-return barrier changes. This is a partial optimization;
+it does not remove cold preparation, busy decoding or cleanup waits.
+
+[Eligibility, timing, ownership and verification](idle-native-caption-finalization-2026-10-09.md)
+describes deterministic worker/capture/PCM and preserved-regression coverage.
+Exact-revision hosted release verification and actual device/model latency remain
+pending; host policy tests do not verify an APK or acoustic quality.
+
 ## Audio/Muse integration candidate — 9 October 2026
 
 Build 1233's signed combined APKs failed the native 16 KB audit on CameraX 1.3.4's
@@ -4054,3 +4068,39 @@ interactions use bounded condition waits and no fixed extra delays; their actual
 matrix duration is not known until hosted execution. No Samsung Files/ChatGPT
 picker compatibility, physical Fold 6 behavior, real-model or acoustic success is
 claimed. Receiving-app selection/delivery is outside the controlled fixture.
+
+### Native frozen-pause capture (2026-10-09 source checkpoint)
+
+- Native-only immutable prefix proposal, separate full-WAV fallback, raw completed
+  VAD coverage certificate after capture join, one-attempt spent-encoder fence and
+  bounded reversible tail: `NativePauseCaptureTest`, `NativePauseAudioTurnCaptureTest`.
+- Fresh completed-caption source-window mapping and protected native endpoint
+  eligibility: `CompletedEndpointCueTest`, `NativePauseEndpointPolicyTest`.
+- [Contract and limitations](native-frozen-pause-capture-2026-10-09.md). Existing
+  legacy350/900/1500/1800/3500 paths, quiet/short/echo safeguards and endpoint/speech
+  timing identities remain covered. Source JVM checks do not verify APKs, native
+  models, physical acoustics or the sub-second playback goal.
+
+## Native pause speculative-response admission (9 October 2026)
+
+Owners: `NativeVoiceSpeculation`, `SpeculativeResponseCoordinator`,
+`NativeSpeculativeAudioDriver`, `NativeSpeculativeResponseBackend`,
+`ConversationModelSession.beforeNativeMutation`, and the capture-owned
+`NativePauseCapture` certificate. See [contract and acceptance](../native-speculative-response.md).
+
+JVM acceptance: no TTS/audio/action/history/memory publication before endpoint and
+exact final prompt/PCM identity; live confirmed streaming without a full-draft
+wait; raw-VAD-certified capture boundary and complete-original-WAV fallback;
+resume/correction/typed/stop/call replacement fencing; late callbacks; exact-once
+promotion; byte/character/callback/deadline limits; checked native cancellation,
+rollback and model-lease quarantine. First/follow-up native prompt tests run the
+actual routing, context preparation and assembler, including adoption/cutoff
+changes and the ordinary null-receipt instruction. Final-answer timing cannot
+inherit a rejected candidate's clocks or audio receipt. Promoted native history
+is discarded and rebuilt from confirmed app history.
+
+Host mock/logic and source-bound compilation are not an APK verification or a
+latency measurement. Required remaining gates: release JVM/native checks and all
+Android sandbox profiles on the integrated revision, then matched multi-turn
+real-model/Piper/physical-audio measurements. The target remains final spoken
+chunk to first actual answer playback below one second; no such result is claimed.

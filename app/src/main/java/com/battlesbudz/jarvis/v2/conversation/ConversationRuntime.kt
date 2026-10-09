@@ -38,6 +38,8 @@ internal class ConversationCoordinator(
     private val onTurnFailure: (conversationId: String) -> Unit = {},
     private val beginActivity: (conversationId: String) -> ConversationActivity? = { null }
 ) {
+    fun previewNativeAudioPrompt() = contexts.previewDirectAudio(promptBuilder)
+
     fun start(input: ConversationInvocation, callbacks: ConversationCallbacks): Job? {
         val conversationId = input.conversationIdentity ?: currentConversationId()
         val actions = createActions(conversationId, callbacks.onActionResult)
@@ -105,6 +107,10 @@ internal class ConversationCoordinator(
             var telemetry: ConversationInferenceTelemetry? = null
             val activity = runCatching { beginActivity(conversationId) }.getOrNull()
             fun progress(message: String, sequence: Long) { runCatching { activity?.progress(message, sequence) } }
+            // Only this admitted invocation may install the native-mutation fence.
+            // Unchanged context can promote a running draft; any reset/close must
+            // invalidate and drain it before touching the same native owner.
+            modelSession.beforeNativeMutation = { input.nativeSpeculation?.beforeNativeMutation() }
             try {
                 capture.mark("request_processing_started")
                 capture.metric("request_queue_ms", reply.elapsed())
@@ -163,13 +169,18 @@ internal class ConversationCoordinator(
                 else "I could not load the local model: ${error.message ?: "unknown error"}")
             } finally {
                 try {
+                    if (input.nativeSpeculation?.closeAndDrain() == false)
+                        throw com.battlesbudz.jarvis.v2.voice.SpeculativeResponseCoordinator.Quarantined(null)
                     capture.mark("request_processing_finished")
                     reply.finishBenchmark()
                     if (ownsBenchmark) ownedBackend?.onBenchmarkSubmission = {}
                     modelSession.residentBackend?.onInferenceProgress = {}
                     if (input.voiceAudio == null && !input.callOwned) modelSession.residentBackend?.onPromptSubmitted = { _, _ -> }
                     input.incrementalVoice?.close()
-                } finally { runCatching { activity?.close() } }
+                } finally {
+                    modelSession.beforeNativeMutation = {}
+                    runCatching { activity?.close() }
+                }
                 // Start the bounded visible error after cleanup, before releasing admission.
                 if (failed) runCatching { onTurnFailure(conversationId) }
             }

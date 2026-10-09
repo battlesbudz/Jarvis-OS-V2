@@ -35,7 +35,7 @@ internal class ConversationInferenceTelemetry(
 
     fun begin(engine: ConversationBackend) {
         invocation.comparison?.mark("answer_submit")
-        engine.onInferenceProgress = { progress ->
+        val progressSink: (com.battlesbudz.jarvis.v2.ai.InferenceProgress) -> Unit = { progress ->
             progress.submittedAtMs?.let { callbacks.onLiveInference(it, null, null, true) }
             progress.firstRawTokenAtMs?.let {
                 liveRate.rawToken(it)
@@ -43,6 +43,8 @@ internal class ConversationInferenceTelemetry(
                 callbacks.onLiveInference(null, it, null, true)
             }
         }
+        engine.onInferenceProgress = progressSink
+        invocation.nativeSpeculation?.bindProgress(progressSink)
     }
 
     fun token(text: String) {
@@ -55,7 +57,7 @@ internal class ConversationInferenceTelemetry(
     fun record(label: String, result: GenerationResult, promptChars: Int) {
         reply.benchmark.metric("inference_passes_completed", reply.inferencePasses.size + 1)
         invocation.comparison?.put("inference_$label", "nativeTTFTMs=${result.timeToFirstTokenMs} totalMs=${result.totalGenerationTimeMs} nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}")
-        reply.inferencePasses += InferenceTiming.from(label, result, prepared = false)
+        reply.inferencePasses += InferenceTiming.from(label, result, prepared = label == "answer" && invocation.nativeSpeculation?.promoted == true)
         diagnostics.summary("Inference\n" + "stage=$label\n" + "promptChars=$promptChars\n" +
             "timeToFirstTokenMs=${result.timeToFirstTokenMs}\n" +
             "nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}\n" +

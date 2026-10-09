@@ -18,9 +18,10 @@ internal class CaptureSpeechQueue(
     private val log: (String) -> Unit,
     private val maxBytes: Long = 25 * 32_000L,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val onDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
+    private val onDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> },
+    private val onRawDecision: (SpeechDecision) -> Unit = {}
 ) {
-    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?, val noiseFloorRms: Double = 0.0)
+    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?, val noiseFloorRms: Double = 0.0, val rawDecision: SpeechDecision = decision)
     init { input.deferConsumptionAcknowledgement() }
     private val pendingBytes = AtomicLong()
     val bufferedAudioMs: Long get() = pendingBytes.get() / 32 + input.bufferedAudioMs
@@ -30,6 +31,8 @@ internal class CaptureSpeechQueue(
     @Volatile var latestSpeechAtMs: Long? = null
         private set
     @Volatile private var latestPossibleSpeechAtMs: Long? = null
+    @Volatile private var latestRawRiskThroughPcmBytes = 0L
+    @Volatile private var latestUnclassifiedThroughPcmBytes = 0L
     @Volatile private var classificationInProgress = false
 
     /** Classified silence need not reopen a sealed ASR stream. Hardware audio that
@@ -38,17 +41,34 @@ internal class CaptureSpeechQueue(
         classificationInProgress || input.bufferedAudioMs > 0 ||
             latestPossibleSpeechAtMs?.let { it > lastConsumedAudioAtMs } == true
 
+    /** Native accelerated endpoints must not let the noise gate hide weak/unknown continuation. */
+    fun requiresNativeEndpointDrain(lastConsumedPcmBytes: Long): Boolean =
+        classificationInProgress || input.bufferedAudioMs > 0 ||
+            latestRawRiskThroughPcmBytes > lastConsumedPcmBytes || latestUnclassifiedThroughPcmBytes > lastConsumedPcmBytes
+
     fun frames(): Flow<Frame> = flow {
         val gate = CaptureSpeechGate(input.captureNoiseProfile)
         log("capture_noise_calibration source=${if (gate.noiseFloorRms > 0) "call_session" else "new"} floorRms=${gate.noiseFloorRms.toInt()}")
         var lastNoiseLogAt: Long? = null
+        var receivedPcmBytes = 0L
         input.chunks().collect { pcm ->
+            // Publish uncertainty BEFORE queued bytes can make the collector test drain.
+            classificationInProgress = true
+            receivedPcmBytes += pcm.size
             check(pendingBytes.addAndGet(pcm.size.toLong()) <= maxBytes) {
                 "Recognition queue exceeded 25 seconds; incomplete command must not be submitted"
             }
             val capturedAt = input.lastChunkCaptureTimeMs ?: nowMs()
-            classificationInProgress = true
             val raw = detector.accept(pcm)
+            onRawDecision(raw)
+            val coverage = raw.rawCoverage
+            // A cached probability on a partial frame is not fresh evidence. Pending
+            // coverage may be resolved by a later real frame; a weak/unknown frame may not.
+            if (coverage == null || raw.isSpeech || (coverage.completedFrames > 0 && raw.probability >= .15f)) {
+                latestRawRiskThroughPcmBytes = receivedPcmBytes
+            }
+            latestUnclassifiedThroughPcmBytes = if (coverage == null ||
+                coverage.classifiedThroughSample * 2 != coverage.receivedPcmBytes) receivedPcmBytes else 0L
             val signal = Pcm16Signal.measure(pcm)
             val decision = gate.accept(raw, signal.rms, capturedAt)
             // Weak VAD may become a corroborated whisper after ASR sees it. Do
@@ -74,7 +94,7 @@ internal class CaptureSpeechQueue(
                         "recognitionBacklogMs=$bufferedAudioMs targetSilenceMs=$targetSilenceMs")
                 }
             }
-            emit(Frame(pcm, decision, capturedAt, input.lastChunkSequence, gate.noiseFloorRms))
+            emit(Frame(pcm, decision, capturedAt, input.lastChunkSequence, gate.noiseFloorRms, raw))
         }
     }.buffer(Channel.UNLIMITED).flowOn(dispatcher)
 

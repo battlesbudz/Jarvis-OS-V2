@@ -32,7 +32,11 @@ internal class VoiceTurnCaptureFactory(
                plan: VoiceCapturePlan, comparison: LiveComparison.Trial?, reportStatus: (String) -> Unit,
                onMetrics: (AsrCaptureMetrics, String) -> Unit,
                onPartialTranscript: (String) -> Unit,
-               retainedPcmObserver: com.battlesbudz.jarvis.v2.voice.RetainedPcmObserver? = null): AudioTurnCapture {
+               retainedPcmObserver: com.battlesbudz.jarvis.v2.voice.RetainedPcmObserver? = null,
+               needsFollowupTranscript: (Long?) -> Boolean = { true },
+               nativePauseObserver: com.battlesbudz.jarvis.v2.voice.NativePauseObserver? = null,
+               nativePauseTurnId: String = "",
+               nativePauseGeneration: Long = 0): AudioTurnCapture {
         return AudioTurnCapture(
             QuietSpeechAudioInput(input, maxGain = 1.0, log = {
                 diagnosticRecorder.record("Voice input: $it")
@@ -49,7 +53,7 @@ internal class VoiceTurnCaptureFactory(
                 if (it.startsWith("followup_speech_evidence") || it.startsWith("followup_candidate_rejected")) {
                     diagnosticRecorder.recordTurnEvidence(plan.turnId, "followup_speech", it)
                 }
-                if (it.startsWith("capture_endpoint_timing")) {
+                if (it.startsWith("capture_endpoint_timing") || it.startsWith("caption_finalization") || it.startsWith("native_pause_") || it.startsWith("native_endpoint_cue")) {
                     diagnosticRecorder.recordTurnEvidence(plan.turnId, "capture_endpoint", it)
                 }
                 if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate") || it.startsWith("nonverbal_candidate")) {
@@ -64,7 +68,17 @@ internal class VoiceTurnCaptureFactory(
             },
             onMetrics = onMetrics,
             onPartialTranscript = onPartialTranscript,
-            retainedPcmObserver = retainedPcmObserver
+            retainedPcmObserver = retainedPcmObserver,
+            nativePauseObserver = nativePauseObserver,
+            nativePauseTurnId = nativePauseTurnId,
+            nativePauseGeneration = nativePauseGeneration,
+            canUseNativePause = { onset ->
+                plan.directAudioTurn && comparison == null && retainedPcmObserver != null && !needsFollowupTranscript(onset)
+            },
+            canRetireIdleCaption = { onset ->
+                plan.directAudioTurn && plan.captionAsrEnabled && plan.asrEngine == AsrEngine.WHISPER &&
+                    comparison == null && retainedPcmObserver != null && !needsFollowupTranscript(onset)
+            }
         )
     }
 }

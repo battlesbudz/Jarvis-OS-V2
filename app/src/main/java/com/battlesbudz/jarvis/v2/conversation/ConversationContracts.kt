@@ -31,7 +31,9 @@ internal data class ConversationInvocation(
     val callOwned: Boolean = false,
     val benchmarkCapture: PipelineBenchmarkCapture? = null,
     /** Immutable, complete native encoder result; never provisional action authority. */
-    val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null
+    val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null,
+    /** Candidate output is still held until exact final prompt/input and ordinary routing match. */
+    val nativeSpeculation: com.battlesbudz.jarvis.v2.voice.NativeVoiceSpeculation? = null
 )
 
 internal data class ConversationCallbacks(

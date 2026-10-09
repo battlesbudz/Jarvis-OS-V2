@@ -8,7 +8,8 @@ import kotlinx.coroutines.Job
 internal class VoiceConversationAccess(
     private val dispatch: VoiceConversationDispatch,
     private val currentJob: () -> Job?,
-    private val resetConversation: suspend () -> Unit
+    private val resetConversation: suspend () -> Unit,
+    val previewNativeAudioPrompt: () -> com.battlesbudz.jarvis.v2.voice.NativeVoicePromptPreview? = { null }
 ) {
     val job get() = currentJob()
     fun start(invocation: ConversationInvocation, callbacks: ConversationCallbacks): Job? = dispatch.start(invocation, callbacks)

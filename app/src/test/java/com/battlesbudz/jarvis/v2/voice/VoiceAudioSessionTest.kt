@@ -209,4 +209,35 @@ class VoiceAudioSessionTest {
         } finally { session.close() }
     }
 
+
+    @Test fun sourceFrameNotYetAdmittedAtStopBelongsExactlyToTheNextReader() = runBlocking<Unit> {
+        val packets = Channel<ByteArray>(Channel.UNLIMITED)
+        val parked = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val source = object : AudioInput {
+            override val sampleRateHz = 16000
+            override val channelCount = 1
+            override suspend fun start() {}
+            override suspend fun stop() { packets.cancel() }
+            override fun chunks() = flow {
+                for (pcm in packets) {
+                    // The source has dequeued a frame, but the session has not admitted it.
+                    if (pcm[0] == 2.toByte()) { parked.complete(Unit); release.await() }
+                    emit(pcm)
+                }
+            }
+        }
+        val session = VoiceAudioSession(source, this)
+        try {
+            val first = session.borrow("command"); first.start()
+            packets.send(ByteArray(3200) { 1 })
+            assertEquals(1.toByte(), withTimeout(1000) { first.chunks().first() }[0])
+            packets.send(ByteArray(3200) { 2 }); withTimeout(1000) { parked.await() }
+            first.stop()
+            assertEquals(0L, first.stoppedUnconsumedPcmBytes)
+            val next = session.borrow("command"); next.start()
+            release.complete(Unit)
+            assertArrayEquals(ByteArray(3200) { 2 }, withTimeout(1000) { next.chunks().first() })
+            next.stop(); assertEquals(0L, next.stoppedUnconsumedPcmBytes)
+        } finally { release.complete(Unit); session.close() }
+    }
 }

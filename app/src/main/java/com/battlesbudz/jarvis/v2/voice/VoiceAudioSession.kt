@@ -68,6 +68,8 @@ class VoiceAudioSession(
         val channel = Channel<Frame>(64)
         private var started = false
         private var stopped = false
+        @Volatile override var stoppedUnconsumedPcmBytes: Long? = null
+            private set
         private var queued = 0L
         private var collecting = false
         private var deferredAcknowledgement = false
@@ -140,6 +142,12 @@ class VoiceAudioSession(
         }
         override suspend fun stop() = synchronized(lock) {
             if (!stopped) {
+                // Freeze the exact reader cutoff under the pump/cursor lock BEFORE the
+                // channel is cleared. Unacknowledged frames remain in ring for the next reader.
+                // A source frame not admitted under this lock yet belongs to the next reader;
+                // this is a session admission cutoff, not an atomic hardware sampling barrier.
+                stoppedUnconsumedPcmBytes = ring.asSequence().filter { it.sequence > cursor }
+                    .sumOf { it.pcm.size.toLong() } + source.bufferedAudioMs * sampleRateHz * 2 / 1000
                 stopped = true
                 if (active === this) active = null
                 channel.cancel(); queued = 0

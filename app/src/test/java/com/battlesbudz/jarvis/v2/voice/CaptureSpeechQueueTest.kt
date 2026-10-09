@@ -218,6 +218,68 @@ class CaptureSpeechQueueTest {
         assertTrue(error!!.message!!.contains("incomplete command"))
     }
 
+
+    @Test fun nativeDrainUsesPcmWatermarkWhenQueuedFramesShareCaptureTimestamp() = runBlocking {
+        val input = Input()
+        val profiled = object : AudioInput by input {
+            override val captureNoiseProfile = CaptureNoiseProfile().also { it.floorRms = 1000.0 }
+        }
+        var probability = .01f
+        val framing = FrameSpeechDetector({ probability })
+        val detector = object : SpeechDetector {
+            override fun accept(pcm: ByteArray): SpeechDecision {
+                probability = if (pcm[0] == 1.toByte()) .25f else .01f
+                return framing.accept(pcm)
+            }
+            override fun close() { framing.close() }
+        }
+        val queue = CaptureSpeechQueue(profiled, detector, { 100 }, {}, dispatcher = Dispatchers.Unconfined)
+        input.send(100, 2); input.send(100, 1); input.stop()
+        val frames = mutableListOf<CaptureSpeechQueue.Frame>()
+        queue.frames().collect { frames += it }
+        assertEquals(.25f, frames.last().rawDecision.probability)
+        assertEquals(0f, frames.last().decision.probability) // Room-floor gate hides the weak raw frame.
+        assertFalse(queue.requiresEndpointDrain(100)) // Existing timestamp policy remains unchanged.
+        assertTrue(queue.requiresNativeEndpointDrain(3200))
+        assertFalse(queue.requiresNativeEndpointDrain(6400))
+    }
+
+    @Test fun genuinelyCompletedQuietCoverageResolvesQueuedPartialFramesWithoutReopening() = runBlocking {
+        val input = Input()
+        val queue = CaptureSpeechQueue(input, FrameSpeechDetector({ .01f }), { 100 }, {}, dispatcher = Dispatchers.Unconfined)
+        repeat(8) { input.send(100, 0) }; input.stop()
+        queue.frames().collect { /* Eight1600-sample chunks align with actual512-sample VAD frames. */ }
+        assertFalse(queue.requiresNativeEndpointDrain(3200))
+    }
+
+    @Test fun unclassifiedQueuedTailStillDrainsWithIdenticalTimestamps() = runBlocking {
+        val input = Input()
+        val queue = CaptureSpeechQueue(input, FrameSpeechDetector({ .01f }), { 100 }, {}, dispatcher = Dispatchers.Unconfined)
+        input.send(100, 0); input.send(100, 0); input.stop()
+        queue.frames().collect { }
+        assertTrue(queue.requiresNativeEndpointDrain(3200))
+        assertFalse(queue.requiresNativeEndpointDrain(6400))
+    }
+
+
+    @Test fun pendingBytesCannotBecomeVisibleBeforeUnclassifiedDrainFlag() = runBlocking {
+        val input = Input(); val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val parkedTimestamp = object : AudioInput by input {
+            override val lastChunkCaptureTimeMs: Long get() {
+                entered.countDown(); check(release.await(3, TimeUnit.SECONDS)); return 100
+            }
+        }
+        val queue = CaptureSpeechQueue(parkedTimestamp, FrameSpeechDetector({ .01f }), { 100 }, {})
+        val collecting = async(Dispatchers.Default) { queue.frames().collect { } }
+        try {
+            input.send(100, 0); input.stop()
+            assertTrue(withContext(Dispatchers.IO) { entered.await(3, TimeUnit.SECONDS) })
+            assertEquals(100L, queue.bufferedAudioMs)
+            assertTrue(queue.requiresNativeEndpointDrain(0))
+            release.countDown(); withTimeout(3000) { collecting.await() }
+        } finally { release.countDown(); collecting.cancelAndJoin() }
+    }
+
     private class Input : AudioInput {
         override val sampleRateHz = 16000
         override val channelCount = 1

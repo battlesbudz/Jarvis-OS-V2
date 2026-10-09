@@ -29,6 +29,8 @@ internal class VoiceCallResources(
     fun rememberPlayback(text: String) { followupEcho.remember(text) }
     fun rejectsFollowupEcho(transcript: String, speechStartedAtMs: Long?): Boolean =
         followupEcho.rejects(transcript, speechStartedAtMs)
+    fun needsFollowupTranscript(speechStartedAtMs: Long?): Boolean =
+        followupEcho.needsFinalTranscript(speechStartedAtMs)
     fun consumeFollowupBoundary(): Long? = playbackEndedAt.getAndSet(0).takeIf { it > 0 }
 
     suspend fun borrowMicrophone(label: String, replayAfterMs: Long? = null, communication: Boolean = false): AudioInput = audioLock.withLock {

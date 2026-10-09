@@ -39,6 +39,7 @@ internal class VoiceTurnPreparation(
     private val diagnosticRecorder: DiagnosticRecorder
 ) {
     companion object {
+        private val nativePauseGenerations = java.util.concurrent.atomic.AtomicLong()
         /** Bind ownership before checkpoint/diagnostic/microphone setup can fail. */
         internal fun beginOwnedCall(
             controller: com.battlesbudz.jarvis.v2.voice.VoiceSessionController,
@@ -114,6 +115,7 @@ internal class VoiceTurnPreparation(
             "Choose an audio-capable Gemma model before testing Gemma ASR."
         }
         conversation.reset()
+        if (directAudioTurn) engine.setToolsEnabled(false)
         nativeState.characters = 0
         val ttsDirectory = ttsModels.ensureReady(request.ttsEngine, call::status)
         val followupBoundary = resources.resources.consumeFollowupBoundary()
@@ -256,12 +258,38 @@ internal class VoiceTurnPreparation(
             observation.benchmark.configuration("native_audio_encoder_sha256",
                 com.battlesbudz.jarvis.v2.ai.audio.WeightlessEncoderRecipe.OUTPUT_SHA256)
         }
+        val nativePauseGeneration = nativePauseGenerations.incrementAndGet().also { check(it > 0) }
+        val nativeCapture = lifetime.nativeAudioCapture
+        val nativePreview = if (nativeCapture != null) conversation.previewNativeAudioPrompt() else null
+        if (nativeCapture != null && nativePreview != null) {
+            val exactTurnJob = lifetime.scope.coroutineContext[kotlinx.coroutines.Job]
+            lifetime.nativeSpeculation = com.battlesbudz.jarvis.v2.voice.NativeVoiceSpeculation(
+                lifetime.scope, expectedCallId, request.asrTurnId, nativePauseGeneration,
+                com.battlesbudz.jarvis.v2.voice.NativeSpeculativeAudioDriver(engine, nativeCapture), nativePreview,
+                admissible = {
+                    val thermal = context.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0
+                    directAudioTurn && correction == null && request.comparison == null &&
+                        input.bufferedAudioMs == 0L && thermal < 5
+                }, ownerIsCurrent = {
+                    exactTurnJob?.isActive == true && lifetime.modelLease.owned &&
+                        call.controller.currentCallId() == expectedCallId && call.state.armed
+                }, observe = { event ->
+                    observation.benchmark.mark(event.substringBefore(' '))
+                    diagnosticRecorder.recordSummary("Voice speculation turn=${request.asrTurnId} $event")
+                })
+            observation.benchmark.configuration("native_speculation", "frozen_pause_exact_prompt_v1")
+            observation.benchmark.configuration("native_speculation_budget", "attempts=1,draft_ms=1500,held_chars=4096,held_utf8_bytes=16384,estimated_tokens=1024,callbacks=64,tts_pcm_bytes=0")
+        } else observation.benchmark.configuration("native_speculation", "ineligible_no_native_capture_or_current_context")
         val capturePlan = VoiceCapturePlan(
             request.asrTurnId, request.asrEngine, asrDirectory, directAudioTurn, request.captionAsrEnabled, followupBoundary != null)
         val activeCapture = VoiceTurnCaptureFactory(
             context, diagnosticRecorder
         ).create(lifetime.scope, input, models, capturePlan, request.comparison, call::status,
             retainedPcmObserver = lifetime.nativeAudioCapture,
+            needsFollowupTranscript = resources.resources::needsFollowupTranscript,
+            nativePauseObserver = lifetime.nativeSpeculation,
+            nativePauseTurnId = request.asrTurnId,
+            nativePauseGeneration = nativePauseGeneration,
             onMetrics = { metrics, text -> observation.telemetry.recordAsr(metrics, text, lifetime.capture) },
             onPartialTranscript = { text ->
                 if (text.isNotBlank()) request.comparison?.mark("asr_first_partial")

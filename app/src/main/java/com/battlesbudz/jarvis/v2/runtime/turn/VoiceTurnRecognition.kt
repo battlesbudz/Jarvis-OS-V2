@@ -45,12 +45,23 @@ internal class VoiceTurnRecognition(
             typedAvailable.cancelAndJoin()
             if (!captureFinished.isCompleted) captureFinished.await()
         }
+        if (prepared.correction == null) {
+            observation.benchmark.configuration("final_asr_status", prepared.activeCapture.finalAsrStatus)
+            observation.benchmark.configuration("caption_finalization_reason", prepared.activeCapture.captionFinalizationReason)
+        }
         observation.turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.RECOGNITION_FINALIZED)
         observation.benchmark.mark("recognition_finalized")
         val endpointAt = System.nanoTime()
         observation.telemetry.finalReadyAt.set(endpointAt)
         val audioBytes = prepared.correction?.wav ?: prepared.activeCapture.stop()
         request.comparison?.wav = audioBytes.copyOf()
+        val speculativeCaptureConfirmed = lifetime.nativeSpeculation?.confirmCapture(
+            prepared.activeCapture.nativePauseCertificate, audioBytes) == true
+        if (lifetime.nativeSpeculation?.consumedEncoder == true) {
+            observation.benchmark.configuration("native_speculation_capture", if (speculativeCaptureConfirmed)
+                "certified_frozen_candidate" else "full_recording_fallback")
+            if (!speculativeCaptureConfirmed) lifetime.nativeSpeculation?.beforeNativeMutation()
+        }
         (prepared.correction?.speechEndedAtMs ?: prepared.activeCapture.lastSpeechAtMs)?.let {
             request.comparison?.mark("speech_end", it); observation.telemetry.speechEndedAt.set(it)
             observation.benchmark.markAt("speech_ended", it)
@@ -186,12 +197,15 @@ internal class VoiceTurnRecognition(
         val initialActionPlan = if (!prepared.directAudioTurn && recognitionIssue == null)
             turnOrchestrator.plan(transcript, prepared.voiceHistory.map { it.role to it.text }).actionPlan
             else ActionTurnPlan.NotAction
-        val sealedNativeAudio = if (prepared.directAudioTurn && recognitionIssue == null) {
+        val sealedNativeAudio = if (prepared.directAudioTurn && recognitionIssue == null &&
+            lifetime.nativeSpeculation?.consumedEncoder != true) {
             lifetime.nativeAudioCapture?.sealAfterCaptureJoined(audioBytes,
                 prepared.activeCapture.endpointDecisionAtNs, prepared.activeCapture.retainedPreRollSampleCount)
         } else null
         kotlin.coroutines.coroutineContext.ensureActive()
         return VoiceStageResult.Ready(FinalizedVoiceTurn(transcript, asrTranscript, audioBytes, audioIsComplete,
-            recognitionIssue, preparedText, endpointAt, initialActionPlan, sealedNativeAudio?.content, sealedNativeAudio?.timing))
+            recognitionIssue, preparedText, endpointAt, initialActionPlan, sealedNativeAudio?.content,
+            sealedNativeAudio?.timing,
+            lifetime.nativeSpeculation?.takeIf { it.consumedEncoder }))
     }
 }

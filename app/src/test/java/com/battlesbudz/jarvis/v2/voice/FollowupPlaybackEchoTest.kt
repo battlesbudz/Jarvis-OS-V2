@@ -31,6 +31,21 @@ class FollowupPlaybackEchoTest {
         assertFalse(echo.rejects("One moment please sir", null))
         assertFalse(echo.rejects("One moment please sir", 999))
     }
+    @Test fun captionRetirementRequiresKnownSafeTimingWhenPlaybackIsRemembered() {
+        val echo = FollowupPlaybackEcho()
+        assertFalse(echo.needsFinalTranscript(null)) // No playback exists to match.
+        echo.remember("One moment please sir")
+        assertTrue(echo.needsFinalTranscript(null))
+        assertTrue(echo.needsFinalTranscript(10_000)) // No ended-at evidence yet.
+        echo.ended(1000)
+        assertTrue(echo.needsFinalTranscript(null))
+        assertTrue(echo.needsFinalTranscript(999))
+        assertTrue(echo.needsFinalTranscript(1000))
+        assertTrue(echo.needsFinalTranscript(1350))
+        assertFalse(echo.needsFinalTranscript(1351))
+        echo.clear()
+        assertFalse(echo.needsFinalTranscript(null))
+    }
     @Test fun closingCallErasesPriorPlaybackEvidence() {
         val echo = evidence()
         echo.clear()

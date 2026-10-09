@@ -41,6 +41,7 @@ internal class ConversationGeneration(
         telemetry.attach(engine, prepared.history, prepared.captureReceipt)
         val allowTools = invocation.comparison == null && modelSession.selectedModel().supportsTools &&
             routed.actionPlan is ActionTurnPlan.Ready
+        if (allowTools) invocation.nativeSpeculation?.beforeNativeMutation()
         if (engine.setToolsEnabled(allowTools)) modelSession.clearContextAccounting()
         diagnostics.record("Generation tool policy allowed=$allowTools source=current_action_intent")
         val groundedVoice = invocation.voiceAudio != null && !prepared.referenceContext.isNullOrBlank()
@@ -58,7 +59,7 @@ internal class ConversationGeneration(
         val attachments = readConversationAttachments(invocation.imageUri, invocation.audioUri, reply.benchmark, openAttachment)
         val directAudio = invocation.directVoiceAudio || invocation.comparison?.request?.path == LiveComparison.Path.GEMMA_DIRECT
         check(invocation.sealedVoiceAudio == null || invocation.voiceAudioIsComplete) { "Incomplete native audio cannot be submitted" }
-        val input = ConversationInput(invocation.voiceAudio, directAudio, prepared.textInput, attachments.image, attachments.audio, invocation.sealedVoiceAudio)
+        val input = ConversationInput(invocation.voiceAudio, directAudio, prepared.textInput, attachments.image, attachments.audio, invocation.sealedVoiceAudio, invocation.nativeSpeculation)
         if (invocation.sealedVoiceAudio != null) {
             reply.benchmark.configuration("native_audio_input_path", "incremental_encoder_sealed_conversation_v1")
             reply.benchmark.metric("native_audio_pcm_samples", invocation.sealedVoiceAudio.pcmSampleCount)

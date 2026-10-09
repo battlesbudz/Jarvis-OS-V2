@@ -11,8 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import java.util.UUID
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.battlesbudz.jarvis.v2.chat.ConversationThread
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import kotlinx.coroutines.*
@@ -151,10 +154,12 @@ internal fun BenchmarkExportControls(state: BenchmarkExportState) {
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 internal fun BenchmarkExportDialog(state: BenchmarkExportState, onStatus: (String) -> Unit) {
     val context = LocalContext.current
     if (state.parts.isNotEmpty()) AlertDialog(onDismissRequest = state.dismissParts,
-        modifier = Modifier.testTag("pipeline_benchmark_parts"),
+        // A dialog has its own semantics root; the screen's resource-ID policy is not inherited.
+        modifier = Modifier.semantics { testTagsAsResourceId = true }.testTag("pipeline_benchmark_parts"),
         title = { Text("Copy whole report") },
         text = { Column {
             Text("Part ${state.partIndex + 1} of ${state.parts.size} · ${state.parts[state.partIndex].toByteArray(Charsets.UTF_8).size} bytes", modifier = Modifier.testTag("pipeline_benchmark_part_status"))
