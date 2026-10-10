@@ -2,8 +2,8 @@
   "schema_version": 1,
   "files": {
     "README.md": {
-      "bytes": 15776,
-      "sha256": "b8440b13ddf27dc8678b0d5654be2c299a522abefe95df8319efd9ba0c1af328"
+      "bytes": 17129,
+      "sha256": "f5ce07e58fb2ac884136fae8c5d82db90be5b61e0fe12c563a1e75ff2071be4f"
     },
     "bounded_exec.py": {
       "bytes": 16104,
@@ -14,12 +14,12 @@
       "sha256": "3f7a12fe577ec37b1eda87e47b76a9263c77f0cc663707e7b1cb3b9f48f2cd13"
     },
     "common.py": {
-      "bytes": 4816,
-      "sha256": "a27d32c9253451b59dd470345ef4b4205649c3b7e39fa679270730929c75f4cc"
+      "bytes": 4991,
+      "sha256": "51c14e09de94645b21d06676618480d370237f115ca422b3225b662c02208af9"
     },
     "compare_native_pair.py": {
-      "bytes": 3011,
-      "sha256": "5fdf644a45583ad39d70cb03d775a0bdfd756f0df4e4cfd25d728932f36469a2"
+      "bytes": 4707,
+      "sha256": "beb9f7d377eb12cdd3d2b216ec2f38adf5705057b7e287bf3c32a34964057972"
     },
     "encoder-replay/capsule_writer.py": {
       "bytes": 12766,
@@ -94,8 +94,8 @@
       "sha256": "426322998b662cf5a37cb30e2c5f3bd7e2f1b30b6b175e8bfc271055563e6abf"
     },
     "prepare_inputs.py": {
-      "bytes": 10281,
-      "sha256": "eee60f3679b2296f399c54ff2a7e75c52d363e988886f9d18a664578cc0b374f"
+      "bytes": 10194,
+      "sha256": "9526d6326c2bcff89459feaad0aabda89fec317f3409e0c1fec8b5ab39d0ef55"
     },
     "prepare_sdk_source.py": {
       "bytes": 5289,
@@ -134,24 +134,24 @@
       "sha256": "1668a3152e33680d94637b13421c15e68bd97cd8701f7f555c691f5bc5c0b9f3"
     },
     "run_quality.py": {
-      "bytes": 21628,
-      "sha256": "dc640ac3ee5376d20f986c9527860e61e70796c78bcf5ec5113be2e44409ed44"
+      "bytes": 24344,
+      "sha256": "f31bca1e03acf48f0a874df6533e98e84486d0718a71da3f6fffbf523238ae27"
     },
     "test_build_supervisor.py": {
       "bytes": 13295,
       "sha256": "264e1d10d9aba38114a5a6afa3da4ecb3d1575a275bfa77d982cdf654136e3ed"
     },
     "test_encoder_receipts.py": {
-      "bytes": 4392,
-      "sha256": "87237b72109bc060b4170153188e0700ac754b3114c6f376a2018bec4b5858ef"
+      "bytes": 5654,
+      "sha256": "b18eb69797e63b5fad99f225fe8eeb937b06450e2aa006717172ddc21c6483b6"
     },
     "test_prepare_sdk_source.py": {
       "bytes": 6461,
       "sha256": "63c3a18fd9275c04ba71e47007d0fddfdc721b188c825d01a62721edeb717abd"
     },
     "test_quality.py": {
-      "bytes": 22092,
-      "sha256": "4a5d17d9636509ac16f98afe8c67c138429b435dfb19c31e2b3498971151c4ce"
+      "bytes": 18904,
+      "sha256": "feb30ec6951207857b042d779f219316f470294625b15d601197fecd320f2d98"
     },
     "encoder-replay/diagnostic_status.py": {
       "bytes": 17900,
@@ -170,12 +170,12 @@
       "sha256": "660da58a40b19cba9aef42393de29415c739e2c578b8e8917633ee09c9488fc2"
     },
     "diagnostic_pair.py": {
-      "bytes": 19227,
-      "sha256": "fe0ce451f369eec0d203b0c87f180233b25a232a99a96367499eebfda884795a"
+      "bytes": 19286,
+      "sha256": "ce2024a457222c5ed4db54744f860bc8345b741bc5dd13583075b4311027cb38"
     },
     "test_diagnostic_pair.py": {
-      "bytes": 22246,
-      "sha256": "d65a9d4b680030cc41fcb0ea4a0c0679863c25e3f07151c0bbc2e159bbc92cb8"
+      "bytes": 34436,
+      "sha256": "b4a1d313fa767df326af886a819d3204a72e1d5e3cc7ddaafdcd4d349f0de3fb"
     }
   },
   "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"

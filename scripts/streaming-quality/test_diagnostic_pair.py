@@ -19,7 +19,13 @@ import prepare_inputs
 import run_quality
 from test_quality import result
 
-SYNTHETIC_ROWS_SHA = hashlib.sha256(bytes(473088)).hexdigest()
+def heterogeneous_row(row, width=1536):
+    return b''.join(struct.pack('<f', (row*width+column+1)/8192 * (-1 if column % 3 == 0 else 1))
+                    for column in range(width))
+
+
+SYNTHETIC_ROWS = b''.join(heterogeneous_row(row) for row in range(204))
+SYNTHETIC_ROWS_SHA = hashlib.sha256(SYNTHETIC_ROWS[:473088]).hexdigest()
 
 
 def fixtures(inputs):
@@ -48,7 +54,12 @@ def fixtures(inputs):
                         value = b''.join(struct.pack('<f', token+1+1000*layer)*1024
                                          for token in range(max(0,end-24),end))
                         value += bytes((24-min(end,24))*1024*4)
+                    elif label in ('soft_tokens', 'encoder_features'):
+                        value = SYNTHETIC_ROWS[(end-count)*1536*4:(end-count+12)*1536*4]
                 elif stage == 'static' and label == 'mask': value = b'\1'*77+b'\0'*127
+                elif stage == 'adapter' or (stage == 'static' and label == 'features'):
+                    value = SYNTHETIC_ROWS
+                if label == 'eoa_embedding': value = heterogeneous_row(205)
                 payloads[stage][(case['id'],label)] = value
     return stages, payloads
 
@@ -116,19 +127,46 @@ class StateValidityTests(unittest.TestCase):
         altered=copy.deepcopy(self.stages); altered['stateful'][1]['state']='RESET'
         with self.assertRaises(GateError): diagnostic.validate_state_outputs(self.inputs,altered)
 
+    def test_newly_computed_final_cache_values_have_no_reference_oracle(self):
+        # Finite newly appended cache values have no independent static oracle.
+        path=self.inputs/'actual/stateful/pinned-encoder-006.out.next_layer_11.bin'
+        data=bytearray(path.read_bytes()); data[-4:]=struct.pack('<f',123.5); path.write_bytes(data)
+        checks=diagnostic.validate_state_outputs(self.inputs,self.stages)
+        self.assertTrue(checks['state_transition_invariants_valid'])
+        self.assertFalse(checks['cache_state_reference_equivalence_proven'])
+
 
 class ContinuationTests(unittest.TestCase):
-    def exercise(self, mutate=None, *, enabled=True, ordinary_error=None, lane_error=None, payload_mutate=None, lane_mutate=None):
+    def exercise(self, mutate=None, *, enabled=True, ordinary_error=None, lane_error=None,
+                 payload_mutate=None, lane_mutate=None, legacy=True, process_mutate=None,
+                 after_lane=None, before_lane=None, watch_mutate=None):
         temporary=tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         root=Path(temporary.name); out=root/'run'; calls=[]; captured={}
         build={'source_snapshot_sha256':'a'*64,'reviewed_patch_sha256':'b'*64,
                'recipe_manifest_sha256':'c'*64,
                'binaries':{t:{'bytes':1,'sha256':'d'*64} for t in run_quality.TARGETS}}
+        build_checks=0
+        def verify_build(path):
+            nonlocal build_checks
+            build_checks+=1
+            if before_lane and build_checks > 1:
+                before_lane(out,'projected_null' if build_checks==2 else 'raw')
+            return copy.deepcopy(build),root/'sdk'
         def session(work):
-            captured['session']=diagnostic.DiagnosticSession(work); return captured['session']
+            captured['session']=diagnostic.DiagnosticSession(work)
+            original_watch=captured['session'].watch
+            def watch(paths):
+                paths=list(paths)
+                if watch_mutate: watch_mutate(work,paths)
+                return original_watch(paths)
+            captured['session'].watch=watch
+            return captured['session']
         def download(pin,path,**kwargs): path.write_bytes(b'public-source')
         def derive(path,inputs):
             (inputs/'pcm.f32le').write_bytes(b'pcm'); (inputs/'matched.wav').write_bytes(b'wav'); return {}
+        def extract(bundle,inputs):
+            for stage in ('static','adapter','eoa'): (inputs/(stage+'.tflite')).write_bytes(stage.encode())
+            return {}
         def cases(inputs):
             stages,payloads=fixtures(inputs)
             if payload_mutate: payload_mutate(payloads)
@@ -142,11 +180,27 @@ class ContinuationTests(unittest.TestCase):
                 (directory/'stdout.log').write_text(json.dumps(dict(passed=True,decode_pcm_bitwise=True,encoded_and_pcm_mel_bitwise=True)))
             elif directory.name.startswith('encoder-'):
                 stage=directory.name[8:]; emit(out/'inputs',stage,captured['stages'][stage],captured['payloads'][stage])
+            if process_mutate: process_mutate(out, directory.name, value)
             return value,None
         original=prepare_inputs.compare_encoder
         def oracle(inputs,stages,path,**kwargs):
             if ordinary_error: raise ordinary_error
-            try: return original(inputs,stages,path,**kwargs)
+            try:
+                value=original(inputs,stages,path,**kwargs)
+                if not legacy:
+                    if mutate: mutate(out,None)
+                    return value
+                # Emulate the old producer only. The current oracle never raises
+                # a historical-hash failure or accepts a hash whitelist.
+                if value['projected_rows']['sha256'] != SYNTHETIC_ROWS_SHA:
+                    raise GateError('numerical_failure','Unknown legacy fingerprint')
+                value.update(passed=False,classification='numerical_failure',failure_code=diagnostic.FAILURE_CODE,
+                    error='Complete pinned projected-row hash mismatch',
+                    expected_projected_rows=value['historical_projected_rows'])
+                write(path,value)
+                failure=diagnostic.HistoricalReferenceMismatch()
+                failure.bind_original(path,captured['session']._ticket)
+                raise failure
             except diagnostic.HistoricalReferenceMismatch as failure:
                 captured['original_receipt']=path.read_bytes()
                 captured['failure']=failure
@@ -164,17 +218,17 @@ class ContinuationTests(unittest.TestCase):
                 if key in requested and key != 'audio_embedding_tap': value[key]=requested[key]
             if lane_mutate: lane_mutate(value)
             write(directory/'result.json',value); write(directory/'process.json',completed())
+            if after_lane: after_lane(out,directory.name)
             return completed(),value
         with ExitStack() as stack:
-            for owner,name,value in [(run_quality,'verify_build',lambda p:(build,root/'sdk')),
+            for owner,name,value in [(run_quality,'verify_build',verify_build),
                     (run_quality,'DiagnosticSession',session),
-                    (run_quality,'download',download),(run_quality,'extract_sections',lambda *a:{}),
+                    (run_quality,'download',download),(run_quality,'extract_sections',extract),
                     (run_quality,'derive_pcm',derive),(run_quality,'checked_process',process),
                     (run_quality,'checked_full_e2b',lane),(run_quality,'verify',lambda *a:None),
                     (run_quality,'encoder_cases',cases),(run_quality,'compare_encoder',oracle)]:
                 stack.enter_context(patch.object(owner,name,side_effect=value))
-            for owner in (prepare_inputs,diagnostic):
-                stack.enter_context(patch.object(owner,'KNOWN_ROWS_SHA',SYNTHETIC_ROWS_SHA))
+            stack.enter_context(patch.object(diagnostic,'KNOWN_ROWS_SHA',SYNTHETIC_ROWS_SHA))
             stack.enter_context(patch.object(run_quality,'KNOWN_ROWS_SHA',SYNTHETIC_ROWS_SHA))
             stack.enter_context(patch.object(run_quality,'sha',side_effect=lambda p:
                 common.MEL_SHA if Path(p).name=='mel.f32le' else sha(p)))
@@ -258,7 +312,8 @@ class ContinuationTests(unittest.TestCase):
         for mutate in (nonfinite,history):
             out,calls,_,summary=self.exercise(payload_mutate=mutate)
             self.assertNotIn('projected_null',calls)
-            self.assertEqual(load(out/'diagnostic-pair.json')['failure_class'],'numerical_failure')
+            self.assertFalse((out/'diagnostic-pair.json').exists())
+            self.assertEqual(load(out/'encoder-oracle.json')['classification'],'numerical_failure')
             self.assertEqual(summary['classification'],'numerical_failure')
 
     def test_uncertain_cleanup_latch_blocks_first_diagnostic_lane(self):
@@ -350,6 +405,153 @@ class ContinuationTests(unittest.TestCase):
         for value in values:
             with patch.object(diagnostic,'KNOWN_ROWS_SHA',SYNTHETIC_ROWS_SHA):
                 self.assertEqual(diagnostic.public_receipt(value),value)
+
+
+class NormalEquivalenceGateTests(unittest.TestCase):
+    def exercise(self, *args, **kwargs):
+        return ContinuationTests.exercise(self,*args,legacy=False,**kwargs)
+
+    def test_normal_gate_uses_same_run_rows_with_or_without_legacy_flag(self):
+        for enabled in (False,True):
+            out,calls,_,summary=self.exercise(enabled=enabled)
+            self.assertTrue(summary['passed'],summary)
+            self.assertEqual(calls[-2:],['projected_null','raw'])
+            self.assertFalse((out/'diagnostic-pair.json').exists())
+            oracle=load(out/'encoder-oracle.json')
+            self.assertFalse(oracle['complete_reference_hash_match'])
+            for mode in ('projected_null','raw'):
+                request=load(out/(mode+'-request.json'))
+                self.assertEqual(request['projected_tokens_sha256'],SYNTHETIC_ROWS_SHA)
+            self.assertEqual(summary['acceptance_contract'],common.ENCODER_ACCEPTANCE_CONTRACT)
+
+    def test_declared_state_invariant_failure_stops_before_models(self):
+        def changed(values):
+            key=('006','next_layer_11'); data=values['stateful'][key]
+            values['stateful'][key]=struct.pack('<f',123.5)+data[4:]
+        out,calls,_,summary=self.exercise(payload_mutate=changed)
+        self.assertFalse(summary['passed']); self.assertNotIn('projected_null',calls)
+        self.assertEqual(summary['classification'],'numerical_failure')
+
+    def test_compared_rows_cannot_change_before_first_pin_or_at_baseline_adoption(self):
+        def change_row(path):
+            data=bytearray(path.read_bytes()); bits=struct.unpack_from('<I',data,len(data)-4)[0]
+            struct.pack_into('<I',data,len(data)-4,bits+1); path.write_bytes(data)
+        def after_comparison(out,error): change_row(out/'inputs/projected.f32le')
+        def at_adoption(out,paths):
+            path=out/'inputs/projected.f32le'
+            if path in paths: change_row(path)
+        for hook in ({'mutate':after_comparison},{'watch_mutate':at_adoption}):
+            _,calls,_,summary=self.exercise(**hook)
+            self.assertFalse(summary['passed']); self.assertNotIn('projected_null',calls)
+            self.assertEqual(summary['classification'],'identity_failure')
+
+    def test_returned_encoder_oracle_must_match_fresh_receipt(self):
+        def changed(out,error):
+            path=out/'encoder-oracle.json'; value=load(path)
+            value['post_adapter_valid_rows_bitwise']=False; write(path,value)
+        _,calls,_,summary=self.exercise(changed)
+        self.assertFalse(summary['passed']); self.assertNotIn('projected_null',calls)
+        self.assertEqual(summary['classification'],'evidence_failure')
+
+    def test_new_final_cache_value_has_no_reference_equivalence_claim(self):
+        def changed(values):
+            key=('006','next_layer_11'); data=values['stateful'][key]
+            values['stateful'][key]=data[:-4]+struct.pack('<f',123.5)
+        out,_,_,summary=self.exercise(payload_mutate=changed)
+        self.assertTrue(summary['passed'],summary)
+        self.assertFalse(load(out/'encoder-oracle.json')['state_output_checks']['cache_state_reference_equivalence_proven'])
+
+    def test_post_pin_input_state_model_and_receipt_tampering_blocks_first_lane(self):
+        for relative in ('inputs/chunk-6.bin','inputs/stateful.tflite','inputs/static.tflite',
+                         'inputs/adapter.tflite','inputs/full.litertlm','inputs/stateful.tsv',
+                         'encoder-eoa/process.json',
+                         'inputs/actual/stateful/pinned-encoder-006.out.next_layer_11.bin'):
+            def changed(out,error):
+                path=out/relative; path.write_bytes(path.read_bytes()+b' ')
+            with self.subTest(relative=relative):
+                _,calls,_,summary=self.exercise(changed)
+                self.assertFalse(summary['passed']); self.assertNotIn('projected_null',calls)
+                self.assertEqual(summary['classification'],'evidence_failure')
+
+    def test_unexecuted_or_unclean_prerequisite_witness_never_grants_admission(self):
+        for field,value in (('execution_started',False),('cleanup_verified',False),('exit_code',1)):
+            def changed(out,name,process):
+                if name=='encoder-static':
+                    process[field]=value; write(out/name/'process.json',process)
+            _,calls,_,summary=self.exercise(process_mutate=changed)
+            self.assertFalse(summary['passed']); self.assertNotIn('projected_null',calls)
+
+    def test_first_lane_identity_lifecycle_tap_and_positive_counts_block_second(self):
+        changes=[('projected_tokens_sha256',common.ROWS_SHA),('manifest_sha256','0'*64),
+                 ('mode','raw'),('checked_drain_delete',False),('execution_passed',False),
+                 ('decode_tokens',0),('decode_tokens',64),('prefill_tokens',77),
+                 ('decode_at_budget',True),('tool_calls',[{}]),('text','')]
+        for field,value in changes:
+            def changed(receipt): receipt[field]=value
+            with self.subTest(field=field,value=value):
+                _,calls,_,summary=self.exercise(lane_mutate=changed)
+                self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+        def changed(receipt): receipt['audio_embedding_tap']['bytes_compared']=473084
+        _,calls,_,summary=self.exercise(lane_mutate=changed)
+        self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+
+    def test_live_result_replacement_or_prerequisite_change_stops_before_raw(self):
+        for relative in ('inputs/projected.f32le','inputs/static.tsv','encoder-adapter/process.json'):
+            def changed(out,mode):
+                path=out/relative; duplicate=out/'replacement'
+                duplicate.write_bytes(path.read_bytes()); duplicate.replace(path)
+            _,calls,_,summary=self.exercise(after_lane=changed)
+            self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+        for name in ('result','process'):
+            def changed(out,mode):
+                if mode=='raw':
+                    path=out/f'projected_null/{name}.json'; duplicate=out/'replacement'
+                    duplicate.write_bytes(path.read_bytes()); duplicate.replace(path)
+            _,calls,_,summary=self.exercise(before_lane=changed)
+            self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+
+    def test_returned_result_must_match_fresh_process_file(self):
+        def changed(out,mode):
+            path=out/mode/'result.json'; value=load(path); value['text']='Changed on disk'; write(path,value)
+        _,calls,_,summary=self.exercise(after_lane=changed)
+        self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+        self.assertEqual(summary['classification'],'evidence_failure')
+
+    def test_normal_lane_process_types_are_exact_before_raw(self):
+        for field,value in (('exit_code',False),('cleanup_verified',1),('execution_started',1)):
+            def changed(out,mode):
+                path=out/mode/'process.json'; process=load(path); process[field]=value; write(path,process)
+            _,calls,_,summary=self.exercise(after_lane=changed)
+            self.assertFalse(summary['passed']); self.assertNotIn('raw',calls)
+
+    def test_cleanup_latch_and_lane_failure_stop_remaining_work(self):
+        def uncertain(out,error):
+            build=out.parent/'build'; build.mkdir()
+            write(build/'model-process-cleanup.json',{'schema_version':1,'cleanup_verified':False})
+        _,calls,_,summary=self.exercise(uncertain)
+        self.assertNotIn('projected_null',calls); self.assertEqual(summary['classification'],'model_cleanup_failure')
+        for failure in ('resource_constrained','model_cleanup_failure','identity_failure','numerical_failure'):
+            _,calls,_,summary=self.exercise(lane_error=failure)
+            self.assertFalse(summary['passed']); self.assertEqual(summary['classification'],failure)
+            self.assertNotIn('raw',calls)
+
+    def test_equal_wrong_transcript_still_fails_independent_public_phrase(self):
+        def changed(value):
+            value['text']='Thank you'; value['response']['content'][0]['text']='Thank you'
+        out,calls,_,summary=self.exercise(lane_mutate=changed)
+        self.assertEqual(calls[-2:],['projected_null','raw'])
+        self.assertEqual(summary['classification'],'semantic_reference_mismatch')
+        self.assertFalse(summary['passed'])
+
+    def test_export_retains_fingerprints_and_contract_without_tensor_payloads(self):
+        out,_,_,summary=self.exercise()
+        export_evidence.export(out.parent/'build',out,out.parent/'export')
+        exported=load(out.parent/'export/run/encoder-oracle.json')
+        self.assertEqual(exported,load(out/'encoder-oracle.json'))
+        self.assertFalse(exported['complete_reference_hash_match'])
+        self.assertEqual(exported['historical_projected_rows']['sha256'],common.ROWS_SHA)
+        names=load(out.parent/'export/EVIDENCE-INDEX.json')['files']
+        self.assertFalse(any(name.endswith('.bin') or 'request' in name for name in names))
 
 
 if __name__ == '__main__': unittest.main()

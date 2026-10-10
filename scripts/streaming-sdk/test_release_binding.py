@@ -1,8 +1,10 @@
+import copy
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +14,10 @@ import verify_packaged_encoder_assets
 from bind_release_receipt import quality_receipt, QUALITY_FILES, bind, main, ROOT
 from package_android_aar import sha256
 from producer_identity import workflow_identity
+sys.path.insert(0,str(ROOT/'scripts/streaming-quality'))
+import common as quality_common
+import run_quality
+from test_quality import result as native_result
 
 
 class QualityEvidenceBinding(unittest.TestCase):
@@ -36,10 +42,55 @@ class QualityEvidenceBinding(unittest.TestCase):
             'build/build-status.json':{'build_succeeded':True,'compilation_exited_before_quality':True,
                 'reviewed_patch_sha256':self.patch,'source_snapshot_sha256':digest},
             'run/comparison.json':{'passed':True,'native_pair_passed':True,'documentation_example_match':True}})
-        for lane in ('raw','projected_null'):self.data[f'run/{lane}/process.json']={'classification':'passed','status':'completed','exit_code':0}
-        self.write()
+        contract=quality_common.ENCODER_ACCEPTANCE_CONTRACT
+        summary['acceptance_contract']=contract
+        build=self.data['build/build-status.json']
+        build['binaries']={name:{'bytes':1,'sha256':'d'*64} for name in run_quality.TARGETS}
+        model_pins=json.loads((ROOT/'scripts/streaming-quality/model-structure.json').read_text())
+        projected={'bytes':473088,'sha256':'e'*64}
+        inputs={'acceptance_contract':contract,'bundle':quality_common.BUNDLE,'public_wav':quality_common.WAV,
+            'models':{name:{k:pin[k] for k in ('bytes','sha256')} for name,pin in model_pins.items()},
+            'source_snapshot_sha256':digest,'projected':projected,'prerequisite_binding_sha256':'f'*64,
+            'pcm':{'bytes':196884,'sha256':quality_common.PCM_SHA},
+            'mel':{'bytes':157184,'sha256':quality_common.MEL_SHA},
+            'wav':{'bytes':196942,'sha256':'6438b41f257e31bfdd94148bd9d805a7845ed27a5dfd57d774f1c0ff3ef3cb7b'}}
+        self.data['run/input-identity.json']=inputs
+        self.data['run/frontend.json']={'passed':True,'decode_pcm_bitwise':True,
+            'encoded_and_pcm_mel_bitwise':True,'mel_fixture_bitwise':True,
+            'binary':build['binaries']['native_frontend_quality_probe'],**{k:inputs[k] for k in ('pcm','mel','wav')}}
+        self.data['run/encoder-oracle.json']={'passed':True,'acceptance_contract':contract,
+            'post_adapter_valid_rows_bitwise':True,'eoa_bitwise':True,'complete_pinned_native_receipts':True,
+            'stateful_counts_and_masks_match':True,'static_prefix_mask_match':True,
+            'cache_state_all_layers_checked':False,'state_output_count':98,'pcm_samples':49221,
+            'mel_frames':307,'audio_rows':77,'embedding_width':1536,'projected_rows':projected,
+            'historical_projected_rows':{'bytes':473088,'sha256':quality_common.ROWS_SHA},
+            'historical_reference_role':'fingerprint_diagnostic_only','complete_reference_hash_match':False,
+            'state_output_checks':{'all_emitted_outputs_valid':True,'state_transition_invariants_valid':True,
+                'emitted_output_count':131,'cache_state_reference_equivalence_proven':False},
+            'binary':build['binaries']['pinned_encoder_probe']}
+        for name in ('reassembly','frontend','encoder-stateful','encoder-static','encoder-adapter','encoder-eoa','raw','projected_null'):
+            self.data[f'run/{name}/process.json']={'classification':'passed','status':'completed','exit_code':0,
+                'execution_started':True,'cleanup_verified':True}
+        self.write(bind=True)
 
-    def write(self):
+    def write(self,bind=False):
+        if bind:
+            def pin(value):
+                data=json.dumps(value).encode()
+                return hashlib.sha256(data).hexdigest()
+            inputs=self.data['run/input-identity.json']
+            for name,field in (('frontend','frontend_receipt_sha256'),('encoder-oracle','oracle_receipt_sha256')):
+                inputs[field]=pin(self.data[f'run/{name}.json'])
+            lanes={}
+            for lane in ('raw','projected_null'):
+                value=native_result(lane)
+                value.update(run_quality.lane_identity(lane,self.data['build/build-status.json'],inputs))
+                self.data[f'run/{lane}/result.json']=value
+                lanes[lane]={'classification':'passed','result_sha256':pin(value),
+                    'process_sha256':pin(self.data[f'run/{lane}/process.json'])}
+            self.data['run/summary.json']['lanes']=lanes
+            self.data['run/comparison.json']=run_quality.final_comparison(
+                self.data['run/raw/result.json'],self.data['run/projected_null/result.json'])
         files={}
         for name,value in self.data.items():
             p=self.root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(value))
@@ -50,6 +101,83 @@ class QualityEvidenceBinding(unittest.TestCase):
 
     def test_exact_successful_receipt_passes(self):
         self.assertTrue(quality_receipt(self.root,self.identity,self.patch)['passed'])
+
+    def test_old_missing_or_failed_contract_cannot_be_promoted(self):
+        original=copy.deepcopy(self.data)
+        for name in ('run/summary.json','run/input-identity.json','run/encoder-oracle.json','run/comparison.json'):
+            for contract in (None,'historical_fixed_hash_v0'):
+                self.data=copy.deepcopy(original)
+                self.data[name]['acceptance_contract']=contract; self.write()
+                with self.subTest(name=name),self.assertRaisesRegex(ValueError,'contract'):
+                    quality_receipt(self.root,self.identity,self.patch)
+        self.data=original
+
+    def test_oracle_invariant_and_fingerprint_fields_are_required(self):
+        original=copy.deepcopy(self.data)
+        changes=[('passed',False),('post_adapter_valid_rows_bitwise',False),('eoa_bitwise',False),
+            ('complete_pinned_native_receipts',False),('stateful_counts_and_masks_match',False),
+            ('static_prefix_mask_match',False),('state_output_count',97),('audio_rows',76),
+            ('cache_state_all_layers_checked',True),('complete_reference_hash_match',True),
+            ('historical_reference_role','release_oracle'),('state_output_checks',{})]
+        for field,value in changes:
+            self.data=copy.deepcopy(original); self.data['run/encoder-oracle.json'][field]=value
+            self.write(bind=True)
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                quality_receipt(self.root,self.identity,self.patch)
+        self.data=original
+
+    def test_cross_bound_input_runtime_and_state_provenance_is_required(self):
+        original=copy.deepcopy(self.data)
+        changes=[('run/input-identity.json','models',{}),('run/input-identity.json','projected',{}),
+            ('run/input-identity.json','pcm',{}),('run/input-identity.json','prerequisite_binding_sha256',''),
+            ('run/input-identity.json','oracle_receipt_sha256','0'*64),
+            ('run/input-identity.json','frontend_receipt_sha256','0'*64),
+            ('run/frontend.json','binary',{}),('run/encoder-oracle.json','binary',{}),
+            ('run/encoder-static/process.json','cleanup_verified',False),
+            ('run/encoder-adapter/process.json','execution_started',False),
+            ('run/projected_null/process.json','cleanup_verified',False)]
+        for name,field,value in changes:
+            self.data=copy.deepcopy(original); self.data[name][field]=value; self.write()
+            with self.subTest(name=name,field=field),self.assertRaises(ValueError):
+                quality_receipt(self.root,self.identity,self.patch)
+        self.data=original
+
+    def test_new_bool_and_integer_facts_reject_json_numeric_aliases(self):
+        original=copy.deepcopy(self.data)
+        mutations=[('state_output_checks','all_emitted_outputs_valid',1),
+            ('state_output_checks','state_transition_invariants_valid',1),
+            ('state_output_checks','cache_state_reference_equivalence_proven',0),
+            ('state_output_checks','emitted_output_count',131.0),
+            ('projected_rows','bytes',473088.0),('historical_projected_rows','bytes',473088.0)]
+        mutations += [(None,key,float(value)) for key,value in {'state_output_count':98,
+            'pcm_samples':49221,'mel_frames':307,'audio_rows':77,'embedding_width':1536}.items()]
+        for parent,field,value in mutations:
+            self.data=copy.deepcopy(original); oracle=self.data['run/encoder-oracle.json']
+            (oracle[parent] if parent else oracle)[field]=value
+            self.write(bind=True)
+            with self.subTest(parent=parent,field=field),self.assertRaises(ValueError):
+                quality_receipt(self.root,self.identity,self.patch)
+        for name in ('pcm','mel','wav'):
+            self.data=copy.deepcopy(original)
+            self.data['run/input-identity.json'][name]['bytes']=float(self.data['run/input-identity.json'][name]['bytes'])
+            self.write(bind=True)
+            with self.subTest(input=name),self.assertRaisesRegex(ValueError,'Pinned complete input'):
+                quality_receipt(self.root,self.identity,self.patch)
+        self.data=original
+
+    def test_green_comparison_cannot_hide_changed_lane_or_wrong_transcript(self):
+        original=copy.deepcopy(self.data)
+        for field,value in [('projected_tokens_sha256',quality_common.ROWS_SHA),('decode_tokens',0),
+                            ('checked_drain_delete',False),('text','Thank you')]:
+            self.data=copy.deepcopy(original)
+            for lane in ('raw','projected_null'):
+                receipt=self.data[f'run/{lane}/result.json']; receipt[field]=value
+                if field=='text': receipt['response']['content'][0]['text']=value
+                self.data['run/summary.json']['lanes'][lane]['result_sha256']=hashlib.sha256(json.dumps(receipt).encode()).hexdigest()
+            self.write()
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                quality_receipt(self.root,self.identity,self.patch)
+        self.data=original
 
     def test_optional_capture_failure_with_checked_cleanup_preserves_quality_gate(self):
         status=self.data['build/diagnostic-status.json'];status['outcome']='failed'

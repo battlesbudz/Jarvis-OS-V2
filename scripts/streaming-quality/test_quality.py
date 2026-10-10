@@ -282,62 +282,22 @@ class EvidenceTests(unittest.TestCase):
 
 class OrchestrationTests(unittest.TestCase):
     def exercise(self, failure_mode=None, failure_kind='resource_constrained'):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GEMMA_QUALITY_COMPUTE_SLOT='confirmed_by_owner'):
-            root=Path(tmp); out=root/'run'; calls=[]
-            build={'source_snapshot_sha256':'a'*64, 'reviewed_patch_sha256':'b'*64,
-                   'recipe_manifest_sha256':'c'*64, 'binaries':{t:{'bytes':1,'sha256':'d'*64} for t in build_probes.TARGETS}}
-            def download(pin,path,**kwargs): path.write_bytes(b'public-source')
-            def derive(path,inputs):
-                (inputs/'pcm.f32le').write_bytes(b'pcm'); (inputs/'matched.wav').write_bytes(b'wav');return {}
-            def checked(command,directory,results=False,*,cleanup_root=None):
-                self.assertEqual(cleanup_root,root/'build')
-                calls.append(directory.name); directory.mkdir()
-                write(directory/'process.json',{'status':'completed'})
-                if directory.name=='reassembly':(out/'inputs/stateful.tflite').write_bytes(b'model')
-                if directory.name=='frontend':
-                    (out/'inputs/mel.f32le').write_bytes(b'mel')
-                    (directory/'stdout.log').write_text(json.dumps({'passed':True,'decode_pcm_bitwise':True,'encoded_and_pcm_mel_bitwise':True}))
-                if results:
-                    if failure_mode==directory.name:raise GateError(failure_kind,'injected failure')
-                    value=result(directory.name);write(directory/'result.json',value);return {},value
-                return {},None
-            def control(binary,request,directory,*,binary_identity,cleanup_root):
-                self.assertEqual(binary.name,'native_conversation_quality_probe')
-                self.assertEqual(binary_identity,build['binaries'][binary.name])
-                value=common.load(request)
-                self.assertEqual((value['context_tokens'],value['max_output_tokens'],value['resource_profile']),
-                                 (640,64,bounded_exec.FULL_E2B_PROFILE))
-                return checked([],directory,True,cleanup_root=cleanup_root)
-            def oracle(inputs,stages,receipt_path):
-                self.assertEqual(inputs.parent/'encoder-oracle.json', receipt_path)
-                (inputs/'projected.f32le').write_bytes(b'rows');return {'passed':True}
-            oldsha=run_quality.sha
-            with patch.object(run_quality,'verify_build',return_value=(build,root/'sdk')), \
-                 patch.object(run_quality,'download',side_effect=download), \
-                 patch.object(run_quality,'extract_sections',return_value={}), \
-                 patch.object(run_quality,'derive_pcm',side_effect=derive), \
-                 patch.object(run_quality,'checked_process',side_effect=checked), \
-                 patch.object(run_quality,'checked_full_e2b',side_effect=control), \
-                 patch.object(run_quality,'verify'), \
-                 patch.object(run_quality,'encoder_cases',return_value={}), \
-                 patch.object(run_quality,'compare_encoder',side_effect=oracle), \
-                 patch.object(run_quality,'sha',side_effect=lambda p:common.MEL_SHA if Path(p).name=='mel.f32le' else oldsha(p)), \
-                 patch.dict(os.environ,JAVA_HOME=str(root)):
-                args=type('Args',(),{'out':out,'build_dir':root/'build'})()
-                summary=run_quality.run_gate(args)
-            if not failure_mode:
-                self.assertTrue(summary['passed'],summary)
-                self.assertEqual(calls,['reassembly','frontend','encoder-stateful','encoder-static','encoder-adapter','encoder-eoa','projected_null','raw'])
-                a=common.load(out/'projected_null-request.json');b=common.load(out/'raw-request.json')
-                self.assertEqual(a['pcm_sha256'],b['pcm_sha256']);self.assertEqual(a['manifest_sha256'],b['manifest_sha256'])
-                self.assertIn('projected_audio',a['message']['content'][1]);self.assertNotIn('projected_audio',b['message']['content'][1])
-                self.assertFalse(summary['android_full_model_proven']);self.assertFalse(summary['jni_full_model_proven'])
-            else:
-                self.assertFalse(summary['passed']);self.assertEqual(summary['classification'],failure_kind)
-                self.assertNotIn('raw',calls)
-    def test_order_and_same_complete_pcm(self):self.exercise()
-    def test_resource_failure_stops_without_retry(self):self.exercise('projected_null')
-    def test_uncertain_cleanup_stops_before_raw(self):self.exercise('projected_null','model_cleanup_failure')
+        from test_diagnostic_pair import ContinuationTests
+        out,calls,_,summary=ContinuationTests.exercise(self,legacy=False,
+            lane_error=failure_kind if failure_mode else None)
+        if not failure_mode:
+            self.assertTrue(summary['passed'],summary)
+            self.assertEqual(calls,['reassembly','frontend','encoder-stateful','encoder-static','encoder-adapter','encoder-eoa','projected_null','raw'])
+            a=common.load(out/'projected_null-request.json'); b=common.load(out/'raw-request.json')
+            self.assertEqual(a['pcm_sha256'],b['pcm_sha256']); self.assertEqual(a['manifest_sha256'],b['manifest_sha256'])
+            self.assertIn('projected_audio',a['message']['content'][1]); self.assertNotIn('projected_audio',b['message']['content'][1])
+            self.assertFalse(summary['android_full_model_proven']); self.assertFalse(summary['jni_full_model_proven'])
+        else:
+            self.assertFalse(summary['passed']); self.assertEqual(summary['classification'],failure_kind)
+            self.assertNotIn('raw',calls)
+    def test_order_and_same_complete_pcm(self): self.exercise()
+    def test_resource_failure_stops_without_retry(self): self.exercise('projected_null')
+    def test_uncertain_cleanup_stops_before_raw(self): self.exercise('projected_null','model_cleanup_failure')
 
 
 if __name__=='__main__':unittest.main()

@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import struct
 
-from common import GateError, HERE, LITERT_PIN, ROWS_SHA, describe, digest, load, need
+from common import GateError, HERE, LITERT_PIN, ROWS_SHA, canonical, describe, digest, load, need
 
 KNOWN_ROWS_SHA = '33bf34b9953094d2b897b2422091cbae089beda0453709d1af16b18a98478e0e'
 FAILURE_CODE = 'historical_projected_reference_mismatch'
@@ -39,7 +39,7 @@ class HistoricalReferenceMismatch(GateError):
 
 
 class DiagnosticSession:
-    """Live process witnesses and a single-use comparison ticket, never a resume API."""
+    """Same-run immutable witnesses for normal and legacy paths; no resume API."""
     def __init__(self, work):
         self.work = Path(work).resolve()
         self.root_inode = (self.work.stat().st_dev, self.work.stat().st_ino)
@@ -63,12 +63,12 @@ class DiagnosticSession:
     def process_completed(self, name, process, artifacts=()):
         need(len(self.completed) < len(PREREQUISITES) and name == PREREQUISITES[len(self.completed)],
              'Diagnostic prerequisite order changed', 'evidence_failure')
-        need(all(process.get(k) == v for k, v in {
+        need(all(type(process.get(k)) is type(v) and process[k] == v for k, v in {
             'classification': 'passed', 'status': 'completed', 'exit_code': 0,
             'execution_started': True, 'cleanup_verified': True}.items()),
             'Diagnostic prerequisite did not execute and clean up', 'evidence_failure')
         receipt = self.work/name/'process.json'
-        need(load(receipt) == process, 'Live prerequisite receipt differs', 'evidence_failure')
+        need(canonical(load(receipt)) == canonical(process), 'Live prerequisite receipt differs', 'evidence_failure')
         self.watch([receipt, *artifacts])
         self.completed.append(name)
 

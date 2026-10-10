@@ -1,56 +1,77 @@
 # Hosted full-Gemma E2B native quality prerequisite
 
-## Source-only failed-reference diagnostic proposal — 7 October 2026
+## Same-host observable equivalence proposal — 10 October 2026
 
-`--diagnostic-on-known-reference-mismatch` defaults off for standalone calls.
-The hosted quality workflow explicitly selects it in this candidate. It may
-continue only after a newly executed oracle reaches
-the exact historical `e51d19c6…` versus known `33bf34b9…` projected-row mismatch.
-That mismatch remains `numerical_failure`, with the original error, failed
-oracle bytes, strict summary stage and exit 2 retained. A diagnostic result can
-never supply the strict `comparison.json` or a release pass. Unknown hashes,
-row/EOA/count/mask failures and other exceptions do not enter the continuation.
+The versioned acceptance contract is
+`same_host_original_static_stateful_observable_equivalence_v1`. It compares the
+unchanged original static encoder plus original adapter, independently invoked
+from sections of the pinned complete public bundle, with the independently
+reassembled stateful encoder. The same host, native binary, CPU-thread setting,
+full PCM/Mel fixture and original model identities bind both paths. All 77 by
+1536 valid post-adapter float32 values, including the final row and every chunk
+seam, must match bitwise; counts, masks and learned EOA must match exactly.
+No numeric tolerance or accepted output-hash list is introduced.
 
-Continuation requires successful same-invocation reassembly/frontend/four-model
-process witnesses, exact unchanged receipt/file identities and a live single-use
-comparison ticket. There is no receipt replay/resume command. Replaced, copied,
-edited or stale oracle/prerequisite receipts cannot grant continuation. The
-ticket protects orchestration provenance, not against arbitrary trusted Python
-code execution in the orchestrator. Input/output manifests and native receipt
-inventories are independently checked against pinned tensor metadata, accepting
-the runtime's output ordering while rejecting missing, duplicate or extra rows.
+The earlier `e51d19c6…` projected-row fingerprint remains recorded, together with
+the actual same-run fingerprint and a factual match boolean. Its explicit role
+is `fingerprint_diagnostic_only`: it is not a cross-CPU release oracle and does
+not imply that CPU hardware caused a difference. A differing historical digest
+cannot suppress a same-host mismatch. The original static/adapter path and full
+raw Conversation embedding tap remain independently invoked controls, but shared
+LiteRT/XNNPACK backend bugs can affect both paths and escape their equality
+check. Independent expected semantics are limited to the one public phrase
+reference; this is not broad model validation. All source, input, model,
+reassembly, SDK, binary and dependency identities remain fail closed.
 
-Before either diagnostic lane, a pure validator checks all 131 emitted outputs
-for exact schema/size and float finiteness. For all 98 emitted state files it
-checks history counts `[12,24,24,24,24,24,24]`, exact last-four-valid-Mel retention,
-all 12 retained layer prefixes and byte-exact positive-zero invalid tails. These
-rules derive from the pinned stateful constructor's count/slice/select graph;
-they are state-transition validity checks. Newly computed layer rows have no
-fresh static value oracle. The earlier `raw_00` through `raw_11` observed-static
-export is absent from this four-model recipe. Consequently the strict field
-`cache_state_all_layers_checked` remains false, and diagnostic
-`cache_state_reference_equivalence_proven` is always false.
+Normal success now requires the existing pure validator to inspect all 131
+emitted outputs for exact schema/size, legal booleans and float finiteness. All
+98 state outputs receive their declared invariants: history counts
+`[12,24,24,24,24,24,24]`, exact last-four-valid-Mel retention, all twelve retained
+layer prefixes and byte-exact positive-zero invalid tails. These are validity
+and transition checks, not independent equality of newly calculated cache rows.
+Both cache-reference-equivalence claims remain false. A synthetic finite
+mutation confined to a final newly appended cache value demonstrates this limit:
+it may pass the declared invariants and observed row equality. Pre-adapter
+reference equality, all-layer cache reference equality and other audio fixtures
+are outside this property. Invalid padded projected rows must be finite but
+are not compared for byte equality.
 
-Both requests and embedding taps use the actual same-run `33bf34b9…` projected
-rows, with the original failed oracle and prerequisite hashes bound into the
-request identity. Models, full bundle, public WAV/PCM/Mel, SDK source, binaries,
-build receipt and cleanup latch are rechecked before the first lane and again
-before the second. Each uses existing `checked_full_e2b` and the unchanged native
-probe in a fresh process/engine/Conversation, with no persistent cache or effects.
-Context 640, max output 64, CPU 1, 6 GiB inherited per-process VAS, 4 GiB sampled
-whole-tree RSS, at least 6 GiB effective admission, 1 GiB reserve, 240-second wall
-and CPU hard deadlines, 239-second CPU soft limit and 128 MiB file cap remain
-fixed. Prerequisite/build budgets, workflow timeouts and release dependencies
-do not change; the only workflow execution change is the explicit diagnostic opt-in.
+Every normal run now requires live same-invocation reassembly, frontend and
+four-model process witnesses, exact fixture manifests and complete native output
+inventories. Pinned file identities include model sections and full source bundle,
+fixture inputs, prerequisite receipts and all emitted outputs. They are rechecked
+before each encoder stage and before/after each full-model lane. A serialized
+receipt cannot grant execution admission. Each lane uses its actual same-run
+projected hash, and its returned identity, lifecycle, embedding tap, positive
+counts and output controls must pass before another lane starts. The first
+lane's request/result/process receipts remain pinned through the second lane.
+Every lane remains a separate full-E2B process, engine and Conversation, with
+unchanged compute admission, resource limits, cleanup and artifact restrictions.
 
-The only additional public export is an 8 KiB fixed-schema `diagnostic-pair.json`:
-hashes, enum failure classes, check booleans, and public-documentation comparison
-booleans. Diagnostic requests, native result text, process logs, local paths,
-weights, audio and activations stay outside the export. The unchanged release
-binder rejects this diagnostic export and still requires strict quality success.
-Synthetic tests establish orchestration and rejection behavior only. Native
-rebuilds, hosted execution, actual decoder parity and Android/device quality are
-not established by this source-only proposal.
+The release binder requires the exact new contract in summary, oracle, comparison and input
+identity, checks detailed row/state/fingerprint facts and their hash bindings,
+requires executed/cleaned-up prerequisites, verifies each lane's expected input
+and runtime identity, and recomputes pair/public-phrase acceptance from the lane
+results. Prior failed summaries and diagnostic exports remain ineligible, even
+if their diagnostic decoder pair happened to pass. This is a new narrow
+acceptance property; old failed receipts stay failed under the policy that
+produced them. This local source-only proposal has run synthetic Python checks
+only. It has not rebuilt native probes, executed weights, verified an APK or
+established Android/device quality, broad speech quality or cross-host numerical
+equivalence.
+
+## Historical diagnostic compatibility
+
+The old `--diagnostic-on-known-reference-mismatch` spelling is retained for
+invocation compatibility. The current oracle never raises a historical-hash
+failure, so this flag does not change the new acceptance property. Existing
+legacy failure-producer helpers retain their live single-use ticket, immutable
+prerequisites and failed-summary/exit semantics. Their tests explicitly inject
+the old failure producer; they are not assertions about current normal success.
+There is no receipt replay/resume interface. The fixed-schema 8 KiB historical
+`diagnostic-pair.json` reader/export restrictions remain so old diagnostics can
+still be interpreted, but such an export cannot supply a release pass. No old
+artifact is rewritten or relabeled.
 
 The optional encoder capsule has a separate bounded public diagnostic-status
 receipt. It retains only fixed phase/error codes, reviewed module/line and scalar
@@ -137,14 +158,15 @@ tail and resource/action progress are retained even if compilation fails.
   copied into the source tree, artifact upload, or APK assets.
 - A same-pinned-native-runtime oracle runs original static encoder+adapter and
   the reconstructed stateful encoder across48,48,48,48,48,48,19 Mel-frame steps.
-  It checks counts/masks, finite compared outputs, all77x1536 valid post-adapter rows
-  bitwise, and learned EOA equality. Fresh projected prefix SHA256 must be
-  e51d19c68f19e02ea3075720674932ddcc83948f8e4c8b507047e055b06f93e9.
-  Padded rows and every internal layer cache are outside this minimal oracle;
-  they have separate earlier tests, not imported success receipts.
+  It checks all emitted outputs and the declared state invariants, counts/masks,
+  all77x1536 valid post-adapter rows bitwise, and learned EOA equality. The
+  historical projected prefix SHA256
+  e51d19c68f19e02ea3075720674932ddcc83948f8e4c8b507047e055b06f93e9
+  is diagnostic only. Padded-row equality and freshly computed internal-layer
+  cache reference equality remain outside this observable-equivalence contract.
 
-All exact hashes are fail-closed checks, never recomputed expectations accepted
-on mismatch. model-structure.json is fixed tensor schema/section metadata for
+All pinned source/input/model/runtime hashes are fail-closed checks. The actual
+projected digest is a same-run identity, never an expected numeric answer. model-structure.json is fixed tensor schema/section metadata for
 those hashes, not a borrowed inference receipt. The native runner also checks
 actual signature names, tensor types, shapes and byte sizes.
 
@@ -229,11 +251,11 @@ while preparing this package.
 
 ## Retained numerical failures
 
-`encoder-oracle.json` is written on success and failure. It distinguishes actual
-within-run static/streamed row equality from the unchanged earlier-local-reference
-hash check, records only booleans/counts/hashes, and never exports tensor values.
-A failed fixed hash still fails the prerequisite and prevents Conversation lanes.
-Build 1132 passed within-run row and EOA equality but failed that fixed hash; both
-one-thread and two-thread local repeats preserve the old hash, leaving the hosted
-difference unresolved. Bounded runner CPU/ISA metadata supports the next diagnosis;
-it does not establish that hardware caused the difference.
+`encoder-oracle.json` is written on success and failure. The current versioned
+contract records exact same-run row/EOA equality, complete emitted-output/state
+validity and the historical fingerprint diagnostic without exporting tensors.
+Earlier failures remain evidence under their original fixed-hash policy. Build
+1132 passed within-run row and EOA equality but failed that fixed hash; both
+one-thread and two-thread local repeats preserved the old hash. This proposal
+does not resolve the cause or relabel that failure. Bounded runner CPU/ISA
+metadata does not establish that hardware caused the difference.

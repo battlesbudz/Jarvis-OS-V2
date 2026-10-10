@@ -13,7 +13,7 @@ import unicodedata
 from common import *
 from bounded_exec import BUDGET, FULL_E2B_BUDGET, FULL_E2B_PROFILE, run, run_full_e2b, verify_cleanup
 from build_probes import PACKAGE, TARGETS
-from compare_native_pair import compare
+from compare_native_pair import compare, lane_checks
 from prepare_inputs import derive_pcm, extract_sections, encoder_cases, compare_encoder
 from diagnostic_pair import (DiagnosticSession, HistoricalReferenceMismatch, KNOWN_ROWS_SHA,
     FAILURE_CODE, ERROR_CLASSES, stage_artifacts, validate_state_outputs, public_receipt)
@@ -98,7 +98,26 @@ def verify_build(build_dir):
     return receipt, sdk
 
 
-def lane_request(mode, work, build, identity, *, projected_sha256=ROWS_SHA):
+def lane_identity(mode, build, identity):
+    return dict(mode=mode, case='transcribe', sdk_commit=SDK_PIN, litert_workspace_pin=LITERT_PIN,
+        bundle_sha256=BUNDLE['sha256'], producer_sha256=PRODUCER,
+        manifest_sha256=digest(identity), pcm_sha256=PCM_SHA,
+        projected_tokens_sha256=identity['projected']['sha256'],
+        native_binary_sha256=build['binaries']['native_conversation_quality_probe']['sha256'],
+        native_source_snapshot_sha256=build['source_snapshot_sha256'],
+        full_bundle_hash_reverified_before_launch=True, context_tokens=640,
+        max_output_tokens=64, resource_profile=FULL_E2B_PROFILE)
+
+
+def validate_lane_result(result, expected):
+    need(all(type(result.get(k)) is type(v) and result[k] == v for k, v in expected.items()),
+         'Native result identity differs from this lane request', 'identity_failure')
+    need(all(result.get(k) is True for k in ('fresh_process','fresh_conversation','checked_drain_delete')),
+         'Native lifecycle is not verified', 'model_cleanup_failure')
+    need(all(lane_checks(result).values()), 'Native lane checks failed', 'numerical_failure')
+
+
+def lane_request(mode, work, build, identity):
     projected = (work/'inputs/projected.f32le').read_bytes()
     audio = {'type': 'audio', 'blob': base64.b64encode(projected if mode == 'projected_null' else
                                                    (work/'inputs/matched.wav').read_bytes()).decode()}
@@ -106,13 +125,9 @@ def lane_request(mode, work, build, identity, *, projected_sha256=ROWS_SHA):
         audio['projected_audio'] = dict(schema_version=1, dtype='float32_le', projection='audio_adapter',
             end_marker='runtime', complete=True, pcm_samples=49221, token_count=77, embedding_width=1536,
             seal_token='public-complete-float-pcm-49221-v1', producer_sha256=PRODUCER)
-    return dict(mode=mode, case='transcribe', sdk_commit=SDK_PIN, litert_workspace_pin=LITERT_PIN,
-        bundle_sha256=BUNDLE['sha256'], producer_sha256=PRODUCER,
+    return dict(lane_identity(mode, build, identity),
         model_path=str(work/'inputs/full.litertlm'), projected_tokens_path=str(work/'inputs/projected.f32le'),
-        wav_path=str(work/'inputs/matched.wav'), manifest_sha256=digest(identity), pcm_sha256=PCM_SHA,
-        projected_tokens_sha256=projected_sha256, native_binary_sha256=build['binaries']['native_conversation_quality_probe']['sha256'],
-        native_source_snapshot_sha256=build['source_snapshot_sha256'], full_bundle_hash_reverified_before_launch=True,
-        context_tokens=640, max_output_tokens=64, audio_embedding_tap=True, resource_profile=FULL_E2B_PROFILE,
+        wav_path=str(work/'inputs/matched.wav'), audio_embedding_tap=True,
         message={'role': 'user', 'content': [{'type': 'text', 'text': 'Transcribe the spoken words in this audio. Return only the transcription.'}, audio]})
 
 
@@ -123,6 +138,7 @@ def normalize(text):
 
 def final_comparison(raw, projected):
     pair = compare(raw, projected)
+    pair['acceptance_contract'] = ENCODER_ACCEPTANCE_CONTRACT
     pair['semantic_reference'] = REFERENCE
     pair['documentation_example_match'] = all(normalize(r.get('text', '')) == normalize(REFERENCE['text'])
                                               for r in (raw, projected))
@@ -170,7 +186,7 @@ def run_diagnostic_pair(a, work, build, sdk, identity, stages, session, error):
                 verify(inputs/file, identity[name])
             session.verify_unchanged()
             request = diagnostic/(mode+'-request.json')
-            write(request, lane_request(mode, work, build, identity, projected_sha256=identity['projected']['sha256']))
+            write(request, lane_request(mode, work, build, identity))
             session.watch([request])
             process, result = checked_full_e2b(sdk/'bazel-bin'/PACKAGE/'native_conversation_quality_probe',
                 request, diagnostic/mode, binary_identity=build['binaries']['native_conversation_quality_probe'],
@@ -210,8 +226,9 @@ def run_gate(a):
     work = a.out.resolve()
     need(not work.exists(), 'Use a fresh quality run directory; stale receipts are forbidden')
     work.mkdir(parents=True)
-    diagnostic_session = DiagnosticSession(work) if getattr(a, 'diagnostic_on_known_reference_mismatch', False) else None
+    session = DiagnosticSession(work)
     summary = {'schema_version': 1, 'classification': 'pending', 'passed': False,
+               'acceptance_contract': ENCODER_ACCEPTANCE_CONTRACT,
                'android_full_model_proven': False, 'jni_full_model_proven': False,
                'budget': FULL_E2B_BUDGET, 'resource_profile': FULL_E2B_PROFILE,
                'prerequisite_budget': BUDGET, 'stage': 'verify_build', 'lanes': {},
@@ -232,6 +249,8 @@ def run_gate(a):
         identity = {'bundle': BUNDLE, 'public_wav': WAV, 'models': extract_sections(inputs/'full.litertlm', inputs),
                     'pcm_derivation': derive_pcm(inputs/'public.wav', inputs),
                     'source_snapshot_sha256': build['source_snapshot_sha256']}
+        session.watch([inputs/'full.litertlm', inputs/'public.wav', inputs/'pcm.f32le', inputs/'matched.wav',
+                       *[inputs/(stage+'.tflite') for stage in ('static', 'adapter', 'eoa')]])
         summary['stage'] = 'weightless_reassembly'; write(work/'summary.json', summary)
         java = Path(os.environ['JAVA_HOME'])/'bin/java'
         process, _ = checked_process([java, '-Xms16m', '-Xmx128m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1',
@@ -239,7 +258,7 @@ def run_gate(a):
             '-Xss512k', HERE/'recipe/WeightlessEncoderRecipe.java', inputs/'full.litertlm',
             HERE/'recipe/source-copy-recipe.bin', HERE/'recipe/structural-literals.bin.gz', inputs/'stateful.tflite'], work/'reassembly', cleanup_root=a.build_dir)
         verify(inputs/'stateful.tflite', load(HERE/'model-structure.json')['stateful'])
-        if diagnostic_session: diagnostic_session.process_completed('reassembly', process)
+        session.process_completed('reassembly', process, [inputs/'stateful.tflite'])
         identity['models']['stateful'] = describe(inputs/'stateful.tflite')
         summary['stage'] = 'native_frontend'; write(work/'summary.json', summary)
         process, _ = checked_process([sdk/'bazel-bin'/PACKAGE/'native_frontend_quality_probe', inputs/'matched.wav',
@@ -252,54 +271,79 @@ def run_gate(a):
                         mel=describe(inputs/'mel.f32le'), wav=describe(inputs/'matched.wav'),
                         binary=build['binaries']['native_frontend_quality_probe'])
         write(work/'frontend.json', frontend)
-        if diagnostic_session:
-            diagnostic_session.process_completed('frontend', process, [work/'frontend.json',
-                inputs/'pcm.f32le', inputs/'mel.f32le', inputs/'matched.wav'])
+        session.process_completed('frontend', process, [work/'frontend.json',
+            inputs/'pcm.f32le', inputs/'mel.f32le', inputs/'matched.wav'])
         stages = encoder_cases(inputs)
-        if diagnostic_session:
-            diagnostic_session.watch({inputs/s['file'] for cases in stages.values() for case in cases
-                for s in case['inputs'] if not s['file'].startswith('actual/')})
+        session.watch({inputs/s['file'] for cases in stages.values() for case in cases
+            for s in case['inputs'] if not s['file'].startswith('actual/')})
+        session.watch([inputs/(stage+'.tsv') for stage in stages])
         summary['stage'] = 'native_encoder_oracle'; write(work/'summary.json', summary)
         (inputs/'actual').mkdir()
         for stage in ('stateful', 'static', 'adapter', 'eoa'):
+            session.verify_unchanged()
             target = inputs/'actual'/stage; target.mkdir()
             process, _ = checked_process([sdk/'bazel-bin'/PACKAGE/'pinned_encoder_probe', inputs/(stage+'.tflite'),
                              inputs/(stage+'.tsv'), inputs, target], work/('encoder-'+stage), cleanup_root=a.build_dir)
-            if diagnostic_session:
-                diagnostic_session.process_completed('encoder-'+stage, process, stage_artifacts(inputs, stage, stages[stage]))
+            session.process_completed('encoder-'+stage, process, stage_artifacts(inputs, stage, stages[stage]))
+        session.comparison_ticket()
         try:
-            if diagnostic_session:
-                oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json',
-                    continuation_ticket=diagnostic_session.comparison_ticket())
-            else:
-                oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
+            oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
         except HistoricalReferenceMismatch as error:
-            if diagnostic_session:
+            if getattr(a, 'diagnostic_on_known_reference_mismatch', False):
+                # Compatibility with the legacy failure producer only. The v1
+                # same-host oracle never raises a historical-fingerprint error.
                 # The strict failure is unconditionally re-raised, even after successful diagnostics.
                 try:
-                    run_diagnostic_pair(a, work, build, sdk, identity, stages, diagnostic_session, error)
+                    run_diagnostic_pair(a, work, build, sdk, identity, stages, session, error)
                 finally:
                     raise error
             raise
+        need(canonical(load(work/'encoder-oracle.json')) == canonical(oracle),
+             'Live encoder oracle receipt differs', 'evidence_failure')
         oracle['binary'] = build['binaries']['pinned_encoder_probe']
         write(work/'encoder-oracle.json', oracle)
-        identity.update(pcm=describe(inputs/'pcm.f32le'), mel=describe(inputs/'mel.f32le'),
+        session.watch([work/'encoder-oracle.json', inputs/'projected.f32le'])
+        # Bind the identity actually adopted by watch, closing the gap between
+        # comparison and initial observation of the freshly written rows.
+        need(session.pins[inputs/'projected.f32le'][1] == oracle['projected_rows'],
+             'Projected rows changed after encoder comparison', 'identity_failure')
+        identity.update(acceptance_contract=ENCODER_ACCEPTANCE_CONTRACT,
+                        prerequisite_binding_sha256=session.public_binding(),
+                        pcm=describe(inputs/'pcm.f32le'), mel=describe(inputs/'mel.f32le'),
                         wav=describe(inputs/'matched.wav'), projected=describe(inputs/'projected.f32le'),
                         frontend_receipt_sha256=sha(work/'frontend.json'), oracle_receipt_sha256=sha(work/'encoder-oracle.json'))
         write(work/'input-identity.json', identity)
+        session.watch([work/'input-identity.json'])
         # Each lane has a new OS process, engine, Conversation and lifecycle.
         # Neither receives history/state/output from the other lane.
         for mode in ('projected_null', 'raw'):
             summary['stage'] = mode; write(work/'summary.json', summary)
-            verify_build(a.build_dir)
+            verify_cleanup(a.build_dir)
+            current_build, current_sdk = verify_build(a.build_dir)
+            need(current_build == build and current_sdk == sdk, 'Build identity changed')
             verify(inputs/'full.litertlm', BUNDLE)  # Whole 2.59GB hash again, each lane.
+            verify(inputs/'public.wav', WAV)
+            for name, pin in load(HERE/'model-structure.json').items():
+                verify(inputs/(name+'.tflite'), pin)
             for name, file in [('pcm','pcm.f32le'), ('mel','mel.f32le'), ('wav','matched.wav'), ('projected','projected.f32le')]:
                 verify(inputs/file, identity[name])
+            session.verify_unchanged()
             request = work/(mode+'-request.json')
             write(request, lane_request(mode, work, build, identity))
+            session.watch([request])
             process, result = checked_full_e2b(sdk/'bazel-bin'/PACKAGE/'native_conversation_quality_probe',
                 request, work/mode, binary_identity=build['binaries']['native_conversation_quality_probe'],
                 cleanup_root=a.build_dir)
+            need(canonical(load(work/mode/'process.json')) == canonical(process) and
+                 canonical(load(work/mode/'result.json')) == canonical(result),
+                 'Live native receipts differ', 'evidence_failure')
+            need(all(type(process.get(k)) is type(v) and process[k] == v for k, v in {
+                'classification': 'passed', 'status': 'completed', 'exit_code': 0,
+                'execution_started': True, 'cleanup_verified': True}.items()),
+                'Native process did not execute and clean up', 'model_cleanup_failure')
+            validate_lane_result(result, lane_identity(mode, build, identity))
+            session.watch([work/mode/'result.json', work/mode/'process.json'])
+            session.verify_unchanged()
             summary['lanes'][mode] = {'classification': 'passed', 'result_sha256': sha(work/mode/'result.json'),
                                      'process_sha256': sha(work/mode/'process.json')}
             write(work/'summary.json', summary)
@@ -319,7 +363,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--build-dir', type=Path, required=True); p.add_argument('--out', type=Path, required=True)
     p.add_argument('--diagnostic-on-known-reference-mismatch', action='store_true',
-        help='Diagnostic pair only for the known live encoder mismatch; strict gate and exit remain failed.')
+        help='Legacy failure-producer compatibility only; v1 same-host acceptance treats historical fingerprints as diagnostics.')
     a = p.parse_args()
     result = run_gate(a); print(json.dumps(result, indent=2))
     return 0 if result['passed'] else 3 if result['classification'] == 'resource_constrained' else 2

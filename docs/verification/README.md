@@ -27,7 +27,8 @@ commits. Do not create or merge another PR without Justin's permission.
    feature map; removing support is not a claim that those failures were fixed.
    Every current profile uses the existing Ubuntu/KVM x86-64 runner with
    observed ARM64 translation. All retain the 300-second boot, 180-second
-   install, 900-second main-suite and 40-minute job limits. The retired API 29
+   install and 40-minute job limits. The main-suite limit is 1,200 seconds only
+   for `36-foldable-compact`; the other four profiles retain 900 seconds. The retired API 29
    2,400-second/90-minute allowances cannot be selected by this contract.
 
    The foldable uses the SDK's genuine `pixel_fold` hardware definition from
@@ -80,11 +81,18 @@ physical 16 KB ARM64 hardware, OEM behavior, real acoustics/models or device
 performance follows from this x86-64 simulated-page test. Revision metadata
 establishes feasibility, not successful boot or full release verification.
 
-Every supported profile declares `instrumentation_timeout=900` in the same
-contract used by provisioning, artifact selection and receipts. All named
-main tests and individual assertion/upgrade/lifecycle/layout deadlines remain
-required. Android 10/API 29 was subsequently removed from the supported matrix
-on October 6; its earlier capacity trial is historical only.
+Every supported profile declares its exact `instrumentation_timeout` in the
+same contract used by provisioning, artifact selection and receipts: 1,200
+seconds for the named API 36 compact Fold profile and 900 for the other four.
+The October 10 Fold allowance follows Build 1254's 76 passing journeys taking
+894.318 seconds before the aggregate 900-second timeout interrupted test77.
+The suite grew from 48 journeys when 900 seconds was introduced to 82 now.
+This is a bounded main-suite capacity change; all named tests, screenshots,
+readiness checks and individual assertion/upgrade/lifecycle/layout deadlines
+remain required. No sharding, retries or outer job-limit increase is introduced.
+See the Build 1254 capacity record in [the feature map](features.md).
+Android 10/API 29 was removed from the supported matrix on October 6; its
+earlier capacity trial is historical only.
 
 ### Historical API 35 collector trial
 

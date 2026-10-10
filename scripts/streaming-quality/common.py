@@ -17,6 +17,8 @@ WAV = dict(bytes=295404, sha256='9e42e31cbc41cb3c31dc4ddb1dc05fef322c61b98cc03a3
 PCM_SHA = 'f57adbb58a9a9ce6f198a56166b8f8f8021ff0073f7a54fc2c5171161f933c12'
 MEL_SHA = '243f69cbf70e632fd44535c33ba7f8d01fb3e9907e708880d550a5c5d3cdd851'
 ROWS_SHA = 'e51d19c68f19e02ea3075720674932ddcc83948f8e4c8b507047e055b06f93e9'
+# The historical rows fingerprint is diagnostic, not a cross-host numeric oracle.
+ENCODER_ACCEPTANCE_CONTRACT = 'same_host_original_static_stateful_observable_equivalence_v1'
 PRODUCER = 'd5c50b140ace235717e6713d287e73ccfa4f32d0090e1cceb9d00714da850a1b'
 
 

@@ -1,5 +1,35 @@
 # Feature and acceptance map
 
+## Same-host native encoder acceptance proposal — October 10, 2026
+
+This local-only harness proposal uses the versioned
+`same_host_original_static_stateful_observable_equivalence_v1` contract. The
+unchanged pinned original static encoder and adapter execute independently from
+the reconstructed stateful encoder. It requires bitwise equality of all 77 by
+1536 valid post-adapter rows, exact masks/counts/EOA, all 131 output schema/value
+checks and the supported invariants on all 98 state outputs. The historical
+`e51d19c6…` digest is retained as a fingerprint diagnostic, with no whitelist or
+tolerance. Newly computed cache rows have no fresh static reference, so the
+contract expressly does not establish all-layer cache equality or cross-CPU
+numerical identity.
+
+Normal execution now binds live prerequisite witnesses and immutable files to
+both independent full-E2B lanes. Request identities, positive counts, lifecycle
+cleanup and exact embedding taps fail before another lane starts; full response,
+count and public documentation phrase comparison remain mandatory. Release
+binding requires the new contract and detailed oracle/input/lane evidence.
+Historical failed or diagnostic receipts remain failed and cannot be promoted.
+See [the native contract](../../scripts/streaming-quality/README.md) for precise
+scope, invariants and unchanged resource/export limits.
+
+Only synthetic Python fixtures and source inspection qualify this proposal.
+Nonzero heterogeneous tensors exercise final-row and chunk-seam single-ULP
+errors, reordered/dropped/duplicated rows, state/mask/count/EOA errors,
+post-pin substitution, cleanup failures and downstream receipt rejection.
+A finite final appended-cache mutation is an explicit passing counterexample to
+any broader state-reference claim. No model, native rebuild, capsule, hosted
+rerun, Android execution or new release acceptance is claimed by these tests.
+
 ## Smart Turn opt-in observations — 9 October 2026
 
 An explicit default-off setting verifies the pinned auxiliary model before local
@@ -11,7 +41,9 @@ The source recovered after interruption is distinguished from newly rebuilt
 build/test/license support. [Recovery scope and fresh checks](smart-turn-recovery-2026-10-09.md)
 are the current evidence. Named journey81 covers opt-in/disable/recreation without
 weights. Android/NDK/shrunk linkage, phone costs and premature-cutoff calibration
-remain pending; all existing five profiles and 900-second main deadlines remain.
+remain pending. All five profiles remain required; the later October 10 capacity
+review sets the Fold main deadline to 1,200 seconds and retains 900 for the other
+four, as recorded in the Build 1254 section below.
 
 Capture-first follow-ups now attach the same retained call observer after the old
 interruption listener joins. Observation admission additionally requires the exact
@@ -4223,3 +4255,64 @@ and callback/IO cancellation boundaries, pass alongside 11 existing export JVM
 tests and 109+82 helper tests. [Evidence and explicit host limitations](benchmark-export-recreation-2026-10-09.md)
 retain the failed-run and dependency bindings. Fresh exact-revision complete
 signed/R8/five-profile Android verification remains required.
+
+### Build 1254 Fold main-suite capacity (October 10, 2026)
+
+Build 1254 ([run 38013605978](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/38013605978),
+source `cb8664b855c01c85e6b267f1bf980c2e86b260ed`) retained Fold artifact
+`11656527587`: the real build-1190 upgrade passed, then 76 of the 82 main
+journeys passed before the controller stopped the main instrumentation command at
+900.02 seconds. Their measured durations sum to 894.318 seconds; test77 had
+just started its activity setup and reported no terminal outcome. No skipped
+test or incomplete phase is treated as passing. Process restart, lifecycle and
+layout phases were not reached on Fold.
+
+The Memory History readiness repair succeeded: the selected tab and expected
+row appeared in 203 ms with zero preparatory swipes. Its full test24 passed in
+148.769 seconds; the export test45 passed in 100.068 seconds and Wisp test49 in
+88.219 seconds. The 72 cases completed in both builds 1252 and 1254 were
+22.031 seconds faster in aggregate. This supports a main-suite capacity
+shortfall, not an observed permanent hang in test77. It does not prove that
+the unfinished tests or later phases will pass.
+
+The original 900-second aggregate limit was introduced by `55094bc` when the
+contract contained 48 journeys; the current contract contains 82. Following
+review of the measured Build 1254 results, only `36-foldable-compact` now gets
+1,200 seconds for the main instrumentation invocation. The exact named API 36
+compact Fold configuration is checked before admitting that allowance; all
+four other profiles keep 900 seconds. This supersedes the earlier blanket
+900-second statement, including the speculative capacity warning in the
+October 9 Smart Turn wiring record. It changes neither product performance
+acceptance nor any individual assertion or readiness deadline.
+
+All 82 named journeys, raw terminal outcomes, per-test PNG/XML, true previous-
+APK upgrade, process/permission recovery, actual fold/unfold, layout and native
+page-size checks remain required. The 300-second boot, 180-second install,
+180-second phase, 300-second layout and 40-minute outer job limits are unchanged.
+There is no sharding, test retry, production-code change or model execution in
+this repair. Build 1254 failed and remains failure evidence; a fresh exact-
+revision full release gate is still required before APK publication.
+
+Local validation passes all 111 build/helper tests and 82 verification helper
+tests, including exact profile allowances, rejection of a borrowed Fold budget,
+all 82 main-test names and unchanged upgrade/controller phase budgets.
+
+
+### Build 1254 model-choice callback observation
+
+Build 1254 ([run 38013605978](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/38013605978),
+source `cb8664b855c01c85e6b267f1bf980c2e86b260ed`) retained API 30's
+`test33` failure: the immediate selection count was zero after one Choose tap.
+The captured button was enabled and fully visible. Pinned UiAutomator 2.3.0
+injects click events asynchronously; that return does not acknowledge the UI
+callback. The fixture now waits for Download delivery and for Choose's terminal
+dismiss callback, then checks all original assertions on the Activity's main
+thread after the synchronous handler. Each callback wait uses the existing
+15-second UI allowance and fails on timeout. The ActivityScenario boundary is
+not covered by that callback timer. There is still exactly one tap per action,
+with exact selection/dismissal counts, and the chosen model ID is also checked.
+No product, navigation, scenario or suite-budget change is made. Nineteen
+source-bound host checks cover delayed, missing, wrong and duplicate callbacks,
+and the changed method compiles against cached Android/Compose/UiAutomator APIs
+with explicit app/ActivityScenario signature seams. These checks do not run the
+actual UI or establish an Android pass; the changed release gate remains pending.

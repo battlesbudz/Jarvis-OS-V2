@@ -2140,6 +2140,9 @@ class ReleaseJourneyTest {
     @Test fun test33_downloadDoesNotSelectOrDismissCurrentModel() {
         val selectedId = com.battlesbudz.jarvis.v2.ai.ModelStore(context).selectedModel().id
         val requested = AtomicReference<String?>()
+        val chosen = AtomicReference<String?>()
+        val downloadDelivered = java.util.concurrent.CountDownLatch(1)
+        val selectionDismissed = java.util.concurrent.CountDownLatch(1)
         val choices = AtomicInteger(0)
         val dismissals = AtomicInteger(0)
         activity.onActivity { host -> host.setContent {
@@ -2149,22 +2152,34 @@ class ReleaseJourneyTest {
                         12_000_000_000L, 8_000_000_000L, 20_000_000_000L, true),
                     selectedId = selectedId, isInstalled = { it.id == selectedId },
                     benchmarkStore = AndroidPipelineBenchmarkStore(context),
-                    onSelect = { choices.incrementAndGet(); null },
-                    onDismiss = { dismissals.incrementAndGet() },
-                    onDownload = { requested.set(it.id) })
+                    onSelect = { chosen.set(it.id); choices.incrementAndGet(); null },
+                    onDismiss = { dismissals.incrementAndGet(); selectionDismissed.countDown() },
+                    onDownload = { requested.set(it.id); downloadDelivered.countDown() })
             }
         } }
         enterText(By.res("model_search"), "LFM2.5-230M")
         hideKeyboardWithoutNavigating()
         find(By.res("model_family_Liquid · LFM")).click()
         scrollTo(By.res("model_download_LFM2.5-230M")).click()
-        assertEquals("LFM2.5-230M", requested.get())
-        assertEquals("Download must not choose the requested model", 0, choices.get())
-        assertEquals("Download must keep the browser available", 0, dismissals.get())
-        assertEquals(selectedId, com.battlesbudz.jarvis.v2.ai.ModelStore(context).selectedModel().id)
+        // UiObject2.click injects input asynchronously; observe its callback before assertions.
+        assertTrue("Download callback must arrive within the UI deadline",
+            downloadDelivered.await(15, java.util.concurrent.TimeUnit.SECONDS))
+        activity.onActivity {
+            assertEquals("LFM2.5-230M", requested.get())
+            assertEquals("Download must not choose the requested model", 0, choices.get())
+            assertEquals("Download must keep the browser available", 0, dismissals.get())
+            assertEquals(selectedId, com.battlesbudz.jarvis.v2.ai.ModelStore(context).selectedModel().id)
+        }
         scrollTo(By.res("model_choose_LFM2.5-230M")).click()
-        assertEquals("Choosing remains a separate explicit action", 1, choices.get())
-        assertEquals(1, dismissals.get())
+        // ModelBrowser calls onSelect then onDismiss in the same UI handler. Await its
+        // terminal callback, then inspect both exact counts after that handler completes.
+        assertTrue("Choose dismissal callback must arrive within the UI deadline",
+            selectionDismissed.await(15, java.util.concurrent.TimeUnit.SECONDS))
+        activity.onActivity {
+            assertEquals("Choosing remains a separate explicit action", 1, choices.get())
+            assertEquals("LFM2.5-230M", chosen.get())
+            assertEquals(1, dismissals.get())
+        }
     }
 
     @Test fun test34_sqliteMigrationPreservesHistoryAndEraseAcrossReopen() {

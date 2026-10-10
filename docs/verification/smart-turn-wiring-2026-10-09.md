@@ -132,10 +132,13 @@ fixture environment. Existing `VoiceInputSettingsKt` R8 retention already preser
 its exact test-DEX entry point; the new journey references no new production
 class by name. JNI's five exact methods retain their existing narrow rule.
 
-The main Android suite remains limited to 900 seconds, with all existing
-assertions and profiles intact. The extra journey's device/runtime cost is not
-yet measured. A previous Fold run had only 7.53 seconds of main-suite margin;
-that is a release risk to observe, not grounds to raise the limit or remove tests.
+At this October 9 checkpoint the main Android suite remained limited to 900
+seconds, with all existing assertions and profiles intact. The extra journey's
+device/runtime cost was not yet measured. A previous Fold run had only 7.53
+seconds of main-suite margin; that observation alone did not justify raising
+the limit or removing tests. The later Build 1254 evidence and October 10
+reviewed Fold-only 1,200-second aggregate allowance are recorded in
+[the feature map](features.md); all 82 journeys and individual deadlines remain.
 
 Pinned Sherpa commit `917bed95c8e5c7c18aa4d69fea42e9ef8ef0a60e` sets C++17 by
 default at top-level CMake lines 370–374 (fresh pinned-source inspection) and disables language extensions;

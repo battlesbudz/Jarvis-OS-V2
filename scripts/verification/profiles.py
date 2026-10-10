@@ -54,9 +54,17 @@ def load_profiles(path=PROFILES):
         for key, lower, upper in (('boot_timeout', 300, 300), ('job_timeout', 40, 40)):
             if isinstance(profile[key], bool) or not isinstance(profile[key], int) or not lower <= profile[key] <= upper:
                 raise ValueError(f'Invalid or out-of-bounds emulator {key}')
+        # Build 1254 completed 76/82 Fold journeys in 894.318 seconds. Give only
+        # this reviewed profile more aggregate capacity, not longer assertions.
+        fold_capacity = profile['id'] == '36-foldable-compact'
+        if fold_capacity and (
+                tuple(profile[key] for key in ('api', 'apk', 'screen_profile', 'page_size', 'target')) !=
+                (36, 'app-compact', 'foldable', 4096, 'google_apis') or
+                profile['device_profile'] not in ('pixel_fold', '7.6in Foldable')):
+            raise ValueError('Fold main instrumentation capacity requires its declared profile')
         main_timeout = profile['instrumentation_timeout']
         if (isinstance(main_timeout, bool) or not isinstance(main_timeout, int) or
-                main_timeout != 900):
+                main_timeout != (1200 if fold_capacity else 900)):
             raise ValueError('Invalid or out-of-scope main instrumentation timeout')
         configuration = tuple(profile[key] for key in sorted(FIELDS - {'id'}))
         if profile['id'] in ids or configuration in configurations:

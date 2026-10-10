@@ -33,8 +33,11 @@ class ProfileContractTest(unittest.TestCase):
         self.assertEqual(('36-16k-normal', 36, 'google_apis_ps16k', 'app-release'),
                          tuple(large_page[0][key] for key in ('id', 'api', 'target', 'apk')))
         self.assertTrue(any(p['api'] == 35 and p['page_size'] == 4096 for p in profiles))
+        self.assertEqual({'30-phone-normal': 900, '35-phone-compact': 900,
+                          '36-phone-normal': 900, '36-foldable-compact': 1200,
+                          '36-16k-normal': 900},
+                         {p['id']: p['instrumentation_timeout'] for p in profiles})
         for profile in profiles:
-            self.assertEqual(900, profile['instrumentation_timeout'])
             self.assertEqual(('ubuntu-latest', 'x86_64', 'kvm', 300, 40),
                              tuple(profile[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
 
@@ -100,6 +103,28 @@ class ProfileContractTest(unittest.TestCase):
                 self.path.write_text(json.dumps(contract))
                 with self.subTest(index=index, key=key, value=value), self.assertRaises(ValueError):
                     load_profiles(self.path)
+
+    def test_fold_main_capacity_is_exact_and_cannot_spread_to_other_profiles(self):
+        for index, profile in enumerate(self.original['profiles']):
+            allowed = 1200 if profile['id'] == '36-foldable-compact' else 900
+            for value in (allowed - 1, allowed + 1, float(allowed), str(allowed),
+                          900 if allowed == 1200 else 1200):
+                contract = copy.deepcopy(self.original)
+                contract['profiles'][index]['instrumentation_timeout'] = value
+                self.path.write_text(json.dumps(contract))
+                with self.subTest(profile=profile['id'], value=value), self.assertRaises(ValueError):
+                    load_profiles(self.path)
+
+    def test_fold_main_capacity_requires_the_named_device_configuration(self):
+        for changes in ({'id': 'another-fold'}, {'api': 35}, {'apk': 'app-release'},
+                        {'screen_profile': 'phone'}, {'device_profile': 'pixel_2'},
+                        {'page_size': 16384, 'target': 'google_apis_ps16k'}):
+            contract = copy.deepcopy(self.original)
+            foldable = next(p for p in contract['profiles'] if p['id'] == '36-foldable-compact')
+            foldable.update(changes)
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                load_profiles(self.path)
 
     def test_provisioning_fields_are_required_and_cannot_be_silently_defaulted(self):
         for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout', 'instrumentation_timeout'):

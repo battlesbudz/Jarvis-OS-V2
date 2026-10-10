@@ -26,6 +26,14 @@ def load(path):
     return json.loads(path.read_text())
 
 
+def exact_facts(actual, expected):
+    """JSON evidence types matter: 1/0 and floats are not bool/int witnesses."""
+    if type(actual) is not type(expected): return False
+    if type(expected) is dict:
+        return actual.keys() == expected.keys() and all(exact_facts(actual[k],v) for k,v in expected.items())
+    return actual == expected
+
+
 def consumer_evidence(consumer):
     """Accept only a flat bundle or the workflow's retained input subdirectory.
 
@@ -95,13 +103,74 @@ def quality_receipt(folder, identity, patch_sha, expected_source_receipt=None):
     digest=hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     if digest != build['source_snapshot_sha256']:
         raise ValueError('Quality source snapshot changed')
+    # This is a new acceptance property, not a relabeling of the historical
+    # fixed-fingerprint gate or its failed diagnostic receipts.
+    sys.path.insert(0, str(ROOT/'scripts/streaming-quality'))
+    import common as quality_common
+    from run_quality import final_comparison, lane_identity, validate_lane_result
+    oracle=load(folder/'run/encoder-oracle.json')
+    inputs=load(folder/'run/input-identity.json')
     comparison=load(folder/'run/comparison.json')
+    contract=quality_common.ENCODER_ACCEPTANCE_CONTRACT
+    if any(value.get('acceptance_contract') != contract for value in (summary,oracle,inputs,comparison)):
+        raise ValueError('Same-host encoder acceptance contract is missing or stale')
+    if (any(oracle.get(k) is not True for k in ('passed','post_adapter_valid_rows_bitwise',
+            'eoa_bitwise','complete_pinned_native_receipts','stateful_counts_and_masks_match','static_prefix_mask_match'))
+            or oracle.get('cache_state_all_layers_checked') is not False
+            or not exact_facts(oracle.get('state_output_checks'), {'all_emitted_outputs_valid':True,
+                'state_transition_invariants_valid':True,'emitted_output_count':131,
+                'cache_state_reference_equivalence_proven':False})
+            or any(not exact_facts(oracle.get(k),v) for k,v in {'state_output_count':98,'pcm_samples':49221,
+                'mel_frames':307,'audio_rows':77,'embedding_width':1536}.items())):
+        raise ValueError('Same-host encoder equivalence or state invariants did not pass')
+    projected=oracle.get('projected_rows',{})
+    historical={'bytes':473088,'sha256':quality_common.ROWS_SHA}
+    if (set(projected) != {'bytes','sha256'} or not exact_facts(projected.get('bytes'),473088)
+            or not re.fullmatch('[0-9a-f]{64}',projected.get('sha256',''))
+            or not exact_facts(oracle.get('historical_projected_rows'),historical)
+            or oracle.get('historical_reference_role') != 'fingerprint_diagnostic_only'
+            or oracle.get('complete_reference_hash_match') is not (projected == historical)):
+        raise ValueError('Historical fingerprint diagnostic is missing or inconsistent')
+    models=load(ROOT/'scripts/streaming-quality/model-structure.json')
+    models={name:{key:pin[key] for key in ('bytes','sha256')} for name,pin in models.items()}
+    if (not exact_facts(inputs.get('models'),models) or not exact_facts(inputs.get('bundle'),quality_common.BUNDLE)
+            or not exact_facts(inputs.get('public_wav'),quality_common.WAV) or not exact_facts(inputs.get('projected'),projected)
+            or inputs.get('source_snapshot_sha256') != build['source_snapshot_sha256']
+            or inputs.get('oracle_receipt_sha256') != files['run/encoder-oracle.json']['sha256']
+            or inputs.get('frontend_receipt_sha256') != files['run/frontend.json']['sha256']
+            or not re.fullmatch('[0-9a-f]{64}',inputs.get('prerequisite_binding_sha256',''))):
+        raise ValueError('Same-run encoder input or prerequisite binding changed')
+    for name,size,sha in [('pcm',196884,quality_common.PCM_SHA),('mel',157184,quality_common.MEL_SHA),
+            ('wav',196942,'6438b41f257e31bfdd94148bd9d805a7845ed27a5dfd57d774f1c0ff3ef3cb7b')]:
+        if not exact_facts(inputs.get(name),{'bytes':size,'sha256':sha}):
+            raise ValueError('Pinned complete input identity changed: '+name)
+    frontend=load(folder/'run/frontend.json')
+    if (any(frontend.get(k) is not True for k in ('passed','decode_pcm_bitwise',
+            'encoded_and_pcm_mel_bitwise','mel_fixture_bitwise'))
+            or frontend.get('binary') != build.get('binaries',{}).get('native_frontend_quality_probe')
+            or oracle.get('binary') != build.get('binaries',{}).get('pinned_encoder_probe')
+            or any(frontend.get(k) != inputs[k] for k in ('pcm','mel','wav'))):
+        raise ValueError('Fresh frontend or encoder runtime binding changed')
     if any(comparison.get(k) is not True for k in ('passed','native_pair_passed','documentation_example_match')):
         raise ValueError('Raw/projected parity or documented semantic reference failed')
-    for lane in ('raw','projected_null'):
-        process=load(folder/f'run/{lane}/process.json')
-        if any(process.get(k)!=v for k,v in {'classification':'passed','status':'completed','exit_code':0}.items()):
-            raise ValueError('Native inference did not complete successfully: '+lane)
+    for name in ('reassembly','frontend','encoder-stateful','encoder-static','encoder-adapter','encoder-eoa','raw','projected_null'):
+        process=load(folder/f'run/{name}/process.json')
+        if any(type(process.get(k)) is not type(v) or process[k]!=v for k,v in {
+                'classification':'passed','status':'completed','exit_code':0,
+                'execution_started':True,'cleanup_verified':True}.items()):
+            raise ValueError('Native inference did not complete successfully: '+name)
+    results={lane:load(folder/f'run/{lane}/result.json') for lane in ('raw','projected_null')}
+    try:
+        for lane,value in results.items():
+            validate_lane_result(value,lane_identity(lane,build,inputs))
+            if summary.get('lanes',{}).get(lane) != {'classification':'passed',
+                    'result_sha256':files[f'run/{lane}/result.json']['sha256'],
+                    'process_sha256':files[f'run/{lane}/process.json']['sha256']}:
+                raise ValueError('Native lane summary binding changed')
+    except quality_common.GateError as error:
+        raise ValueError('Native lane evidence failed: '+str(error)) from error
+    if comparison != final_comparison(results['raw'],results['projected_null']):
+        raise ValueError('Native pair or semantic comparison disagrees with lane evidence')
     return {'passed':True,'evidence_index_sha256':sha256(folder/'EVIDENCE-INDEX.json'),
             'summary':summary,'files':files}
 
