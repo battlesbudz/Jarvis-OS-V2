@@ -1,6 +1,7 @@
 import org.gradle.api.Task
 import org.gradle.api.tasks.TaskProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
 import java.net.URL
 
 plugins {
@@ -18,7 +19,9 @@ val buildVisionOrtJni by tasks.registering(Exec::class) {
     inputs.file(rootProject.file("scripts/build_ort_vision_jni.py"))
     outputs.dir(visionOrtDir)
     doFirst {
-        val ndkDir = android.ndkDirectory
+        // Match app module: NDK lives under the SDK directory (ndkVersion is
+        // set on the app module; this library module resolves the path directly).
+        val ndkDir = File(android.sdkDirectory, "ndk/27.2.12479018")
         commandLine("python3", rootProject.file("scripts/build_ort_vision_jni.py"),
             "--output", visionOrtDir.get().asFile,
             "--android-ndk", ndkDir)
