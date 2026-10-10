@@ -5782,7 +5782,12 @@ class ReleaseJourneyTest {
             render(true)
             val disable = scrollTo(By.text("Disable Smart Turn shadow"))
             assertEquals("Disable Smart Turn shadow", disable.text)
-            disable.click()
+            val toggle = scrollTo(By.res("smart_turn_shadow_toggle"))
+            assertTrue("Disable control must be enabled and clickable", toggle.isEnabled && toggle.isClickable)
+            toggle.click()
+            // Input injection can return before the UI handler. Its Enable label is
+            // published only after the synchronous preference update; find is bounded.
+            find(By.text("Enable Smart Turn shadow (8.7 MB)"))
             assertFalse(preferences.getBoolean(key, true))
             activity.recreate()
             render(true)

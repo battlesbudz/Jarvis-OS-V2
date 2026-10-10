@@ -4316,3 +4316,34 @@ source-bound host checks cover delayed, missing, wrong and duplicate callbacks,
 and the changed method compiles against cached Android/Compose/UiAutomator APIs
 with explicit app/ActivityScenario signature seams. These checks do not run the
 actual UI or establish an Android pass; the changed release gate remains pending.
+
+### Build 1255 Smart Turn Disable observation (October 10, 2026)
+
+Build 1255 ([run 38022969808](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/38022969808),
+source `d196ce72022f47a4c240682d6ca25f1c742646d5`) retained API 30's
+`test81` failure: the preference was still true immediately after one Disable
+tap. The log records a tap on its non-clickable text child; the existing tagged
+parent was enabled and clickable. The failure screenshot starts 37 ms after
+the UiObject2 click log. Because the fixture restores the preference in `finally`
+before failure capture, that screenshot cannot prove whether the callback ran.
+The same source passes this journey on API 35 compact and API 36 normal.
+
+The production Disable handler synchronously updates the in-memory preference,
+then switches its Compose state to the Enable label. The test now preserves its
+Disable-label assertion, taps the existing tagged parent exactly once, and
+awaits that exact Enable label through the unchanged `find` helper before the
+original preference assertion. Its condition wait remains 15,000 ms; this is
+not a strict wall-clock cap because an individual framework lookup/idle call
+can overrun it. Missing delivery or missing UI completion still fails. All default-off, disabled-control, recreation,
+preference, input-mode, caption-mode and cleanup checks remain intact. No retry,
+sleep, production change, model invocation, scenario change or suite-budget
+change is introduced.
+
+Thirty-five source-bound host cases reproduce the old immediate-read failure
+under delayed dispatch and validate the repair, including missing-handler/UI,
+failed-persistence, lost-on-recreation, stale-render and changed-mode controls.
+The exact changed method and unchanged production settings UI compile against
+cached Android/Compose/UiAutomator APIs, with explicit ActivityScenario,
+navigation and model-setup seams. This is harness/API evidence, not a fresh
+Android, disk-persistence, minification or APK verification pass. The full
+exact-revision release gate remains required.
