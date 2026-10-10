@@ -1,14 +1,44 @@
+import org.gradle.api.Task
+import org.gradle.api.tasks.TaskProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URL
 
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
 }
 
-// The 4 .onnx models + synset.txt are NOT committed to Jarvis-OS-V2 git
-// (54 MB). They are downloaded at build time from the pinned
-// roboflow-phone-inference branch so the AAR stays self-contained and
-// fully offline at runtime.
+android {
+    namespace = "com.battlesbudz.phoneinference"
+    compileSdk = 35
+
+    defaultConfig {
+        minSdk = 26
+        consumerProguardFiles("proguard-rules.pro")
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+}
+
+dependencies {
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+}
+
+// ---------------------------------------------------------------------------
+// Build-time model fetch: the 4 .onnx models + synset.txt (54 MB) are NOT
+// committed to git. They are downloaded from the pinned roboflow-phone-
+// inference branch into this module's generated assets, so the AAR stays
+// self-contained and fully offline at runtime.
+// ---------------------------------------------------------------------------
 val modelBaseUrl =
     "https://raw.githubusercontent.com/battlesbudz/roboflow-phone-inference/feature/native-onnx-app"
 val modelFiles = mapOf(
@@ -18,16 +48,19 @@ val modelFiles = mapOf(
     "mobilenetv2-12.onnx" to "models/mobilenetv2-12.onnx",
     "synset.txt" to "synset.txt",
 )
-val generatedAssets = layout.buildDirectory.dir("generated/assets")
-val downloadVisionModels by tasks.registering {
-    outputs.dir(generatedAssets)
+val generatedAssetsDir = layout.buildDirectory.dir("generated/vision-assets")
+
+val downloadVisionModels: TaskProvider<Task> = tasks.register("downloadVisionModels") {
+    group = "build"
+    description = "Downloads the native ONNX vision models and synset into generated assets."
+    outputs.dir(generatedAssetsDir)
     doLast {
-        val dir = generatedAssets.get().asFile
+        val outDir = generatedAssetsDir.get().asFile
         for ((remote, local) in modelFiles) {
-            val target = dir.resolve(local)
+            val target = outDir.resolve(local)
             if (!target.exists()) {
                 target.parentFile.mkdirs()
-                java.net.URL("$modelBaseUrl/$remote").openStream().use { input ->
+                URL("$modelBaseUrl/$remote").openStream().use { input ->
                     target.outputStream().use { output -> input.copyTo(output) }
                 }
             }
@@ -35,24 +68,9 @@ val downloadVisionModels by tasks.registering {
     }
 }
 
-android {
-    namespace = "com.battlesbudz.phoneinference"
-    compileSdk = 35
-    defaultConfig {
-        minSdk = 26
-        consumerProguardFiles("proguard-rules.pro")
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlin {
-        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
-    }
-    sourceSets.getByName("main").assets.srcDir(generatedAssets)
-}
-tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(downloadVisionModels) }
+android.sourceSets.getByName("main").assets.srcDir(generatedAssetsDir)
 
-dependencies {
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+// Ensure the models are downloaded before any build work reads the assets.
+tasks.named("preBuild") {
+    dependsOn(downloadVisionModels)
 }
