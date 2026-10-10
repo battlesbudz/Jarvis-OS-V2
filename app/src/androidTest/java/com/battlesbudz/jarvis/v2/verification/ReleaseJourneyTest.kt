@@ -512,6 +512,43 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    /** Await the newly mounted History before page-seeking can scroll its newest row away. */
+    private fun awaitMemoryHistoryRow(content: String) {
+        val started = SystemClock.uptimeMillis()
+        val deadline = started + 15_000L
+        val configuration = Configurator.getInstance()
+        val savedIdleTimeout = configuration.waitForIdleTimeout
+        var observation = "unobserved"
+        // This read-only poll owns one deadline. UiObject2 getters must not each
+        // insert their ordinary implicit idle wait; restore it on every exit.
+        try {
+            configuration.setWaitForIdleTimeout(0)
+            while (SystemClock.uptimeMillis() < deadline) {
+                clearNavigationCache()
+                if (SystemClock.uptimeMillis() >= deadline) break
+                try {
+                    val selected = device.findObject(By.res("memory_history_tab").pkg(context.packageName).selected(true))
+                    if (SystemClock.uptimeMillis() >= deadline) break
+                    val row = device.findObject(By.text(content).pkg(context.packageName))
+                    if (SystemClock.uptimeMillis() >= deadline) break
+                    val bounds = row?.visibleBounds
+                    observation = "selected=${selected != null} row=$bounds"
+                    if (selected != null && bounds != null && bounds.width() > 0 && bounds.height() > 0 &&
+                        SystemClock.uptimeMillis() < deadline) {
+                        recordMemoryNavigation("historyReady elapsedMs=${SystemClock.uptimeMillis() - started} $observation swipes=0")
+                        if (SystemClock.uptimeMillis() < deadline) return
+                        break
+                    }
+                } catch (_: StaleObjectException) {
+                    observation = "stale"
+                }
+                val remaining = deadline - SystemClock.uptimeMillis()
+                if (remaining > 0) SystemClock.sleep(minOf(100L, remaining))
+            }
+            throw AssertionError("History and its newest row did not become ready within 15,000 ms: $observation")
+        } finally { configuration.setWaitForIdleTimeout(savedIdleTimeout) }
+    }
+
     private fun recordModelGeometry(message: String) {
         android.util.Log.i("JarvisVerification", message)
         // Keep diagnostics in instrumentation.txt even if later platform logs
@@ -1449,6 +1486,7 @@ class ReleaseJourneyTest {
             searchMemory("rejected private note", By.text("No approved memories match that search."))
             enterFixedMemorySearchText("")
             clickFixedMemoryControl(By.res("memory_history_tab"))
+            awaitMemoryHistoryRow("Rejected private note for verification.")
             assertNotNull(scrollTo(By.text("Rejected private note for verification.")))
             assertNotNull(scrollTo(By.textStartsWith("Rejected ·")))
 
