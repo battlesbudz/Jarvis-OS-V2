@@ -12,12 +12,8 @@ Sherpa's libonnxruntime.so (1.27.1), so we need only:
 At runtime the bridge resolves Sherpa's libonnxruntime.so from the app's native
 library directory -- this module packages NO private ORT copy.
 
-This is the same pattern as the LiteRT streaming bridge: use the available
-upstream artifacts instead of waiting for a Maven publication that will never come.
-
 Pinned inputs:
-  ORT source:      microsoft/onnxruntime tag v1.27.1
-                   (https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.27.1.tar.gz)
+  ORT Java sources: microsoft/onnxruntime tag v1.27.1, java/src/main/java
   ORT Android libs: csukuangfj/onnxruntime-libs v1.27.1
                    (same zip + sha256 that scripts/build_sherpa.py uses)
 
@@ -33,15 +29,30 @@ import hashlib
 from pathlib import Path
 import shutil
 import subprocess
-import tarfile
 import urllib.request
 import zipfile
 
 ORT_VERSION = '1.27.1'
-ORT_SOURCE = ('https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.27.1.tar.gz', None)
+ORT_RAW_BASE = 'https://raw.githubusercontent.com/microsoft/onnxruntime/v1.27.1/java/src/main/java/ai/onnxruntime'
 # Same pinned zip + hash as scripts/build_sherpa.py (Sherpa's ORT 1.27.1).
 ORT_ANDROID = ('https://github.com/csukuangfj/onnxruntime-libs/releases/download/v1.27.1/onnxruntime-android-1.27.1.zip',
                'defade26209f72cf4fa9769b18052c842833d6bef12924595d26f03b995548ca')
+
+# The Java sources in ai.onnxruntime (from the v1.27.1 tree).
+JAVA_SOURCES = [
+    'MapInfo.java', 'NodeInfo.java', 'OnnxJavaType.java', 'OnnxMap.java',
+    'OnnxModelMetadata.java', 'OnnxRuntime.java', 'OnnxSequence.java',
+    'OnnxSparseTensor.java', 'OnnxTensor.java', 'OnnxTensorLike.java',
+    'OnnxValue.java', 'OrtAllocator.java', 'OrtEnvironment.java',
+    'OrtEpDevice.java', 'OrtException.java', 'OrtFlags.java',
+    'OrtHardwareDevice.java', 'OrtLoggingLevel.java', 'OrtLoraAdapter.java',
+    'OrtModelCompilationOptions.java', 'OrtProvider.java', 'OrtProviderOptions.java',
+    'OrtSession.java', 'OrtTrainingSession.java', 'OrtUtil.java',
+    'SequenceInfo.java', 'TensorInfo.java', 'ValueInfo.java', 'package-info.java',
+    'providers/CoreMLFlags.java', 'providers/NNAPIFlags.java',
+    'providers/OrtCUDAProviderOptions.java', 'providers/OrtTensorRTProviderOptions.java',
+    'providers/StringConfigProviderOptions.java', 'providers/package-info.java',
+]
 
 ABI = 'arm64-v8a'
 
@@ -65,7 +76,7 @@ def build(output):
     output.mkdir(parents=True, exist_ok=True)
 
     # Stamp: rebuild when this script changes (mirrors build_sherpa.py).
-    fingerprint = 'vision-ort-jni-v2-' + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    fingerprint = 'vision-ort-jni-v3-' + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     stamp = output / 'build-stamp'
     if stamp.exists() and stamp.read_text() == ORT_VERSION + fingerprint:
         print('Vision ORT JNI up to date, skipping build.', flush=True)
@@ -76,30 +87,37 @@ def build(output):
     work = output / 'work'
     work.mkdir(parents=True)
 
-    # 1. ORT source tree: compile the Java API from the v1.27.1 sources.
-    with tarfile.open(download(ORT_SOURCE, work)) as archive:
-        # Only need the Java sources, not the full 272 MB tree.
-        members = [m for m in archive.getmembers()
-                   if '/java/src/main/java/' in m.name or m.name.endswith('VERSION_NUMBER')]
-        archive.extractall(work, members=members, filter='data')
-    src = work / f'onnxruntime-{ORT_VERSION}'
-    version_file = src / 'VERSION_NUMBER'
-    if not version_file.is_file() or version_file.read_text().strip() != ORT_VERSION:
-        raise RuntimeError(f'Unexpected ORT source version in {version_file}')
-    java_src = src / 'java/src/main/java'
+    # 1. Fetch the Java API sources individually (fast, no 272 MB tarball).
+    java_dir = work / 'java/ai/onnxruntime'
+    java_dir.mkdir(parents=True)
+    (java_dir / 'providers').mkdir(exist_ok=True)
+    print(f'Fetching {len(JAVA_SOURCES)} Java sources from v{ORT_VERSION}', flush=True)
+    for name in JAVA_SOURCES:
+        url = f'{ORT_RAW_BASE}/{name}'
+        dest = java_dir / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, dest)
+        if dest.stat().st_size == 0:
+            raise RuntimeError(f'Empty download: {url}')
 
+    # 2. Compile the Java API.
     classes = work / 'classes'
     classes.mkdir()
-    java_files = sorted(java_src.rglob('*.java'))
-    if not java_files:
-        raise RuntimeError('No Java sources found')
-    javac = shutil.which('javac') or 'javac'
+    java_files = sorted(java_dir.rglob('*.java'))
     print(f'Compiling {len(java_files)} Java sources', flush=True)
-    subprocess.run([javac, '-d', str(classes), *[str(f) for f in java_files]], check=True)
-    jar = shutil.which('jar') or 'jar'
-    subprocess.run([jar, 'cf', str(output / 'classes.jar'), '-C', str(classes), '.'], check=True)
+    javac = shutil.which('javac')
+    if not javac:
+        raise RuntimeError('javac not found on PATH; JDK required')
+    subprocess.run([javac, '-d', str(classes), *[str(f) for f in java_files]],
+                   check=True, capture_output=True, text=True)
+    jar = shutil.which('jar')
+    if not jar:
+        raise RuntimeError('jar not found on PATH; JDK required')
+    subprocess.run([jar, 'cf', str(output / 'classes.jar'), '-C', str(classes), '.'],
+                   check=True, capture_output=True, text=True)
+    print('classes.jar built', flush=True)
 
-    # 2. Prebuilt JNI bridge from the csukuangfj 1.27.1 release (same release
+    # 3. Prebuilt JNI bridge from the csukuangfj 1.27.1 release (same release
     #    Sherpa's libonnxruntime.so comes from -- guaranteed ABI match).
     with zipfile.ZipFile(download(ORT_ANDROID, work)) as archive:
         jni_name = f'jni/{ABI}/libonnxruntime4j_jni.so'
@@ -111,8 +129,7 @@ def build(output):
             shutil.copyfileobj(src_file, dst)
     print('Extracted prebuilt libonnxruntime4j_jni.so', flush=True)
 
-    # 3. Sanity: the bridge must DT_NEEDED libonnxruntime.so (resolved to
-    #    Sherpa's copy at runtime), and must NOT bundle its own copy.
+    # 4. Sanity: the module must NOT package a private libonnxruntime.so.
     if (output / 'jni' / ABI / 'libonnxruntime.so').exists():
         raise RuntimeError('Module must not package a private libonnxruntime.so')
 
@@ -124,4 +141,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    build(args.output)
+    try:
+        build(args.output)
+    except subprocess.CalledProcessError as e:
+        print(f'Command failed: {" ".join(e.cmd)}', flush=True)
+        print(f'stdout: {e.stdout}', flush=True)
+        print(f'stderr: {e.stderr}', flush=True)
+        raise
