@@ -1,7 +1,6 @@
 import org.gradle.api.Task
 import org.gradle.api.tasks.TaskProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.io.File
 import java.net.URL
 
 plugins {
@@ -10,21 +9,18 @@ plugins {
 }
 
 // Vision uses Sherpa's ONNX Runtime 1.27.1. Microsoft never published the
-// 1.27.1 Android AAR to Maven, so the JNI bridge (libonnxruntime4j_jni.so)
-// is built from the v1.27.1 source by scripts/build_ort_vision_jni.py and
-// linked against Sherpa's runtime. The module packages NO private
-// libonnxruntime.so; the bridge resolves Sherpa's copy at runtime.
+// 1.27.1 Android AAR to Maven, so scripts/build_ort_vision_jni.py assembles
+// the Java API (compiled from v1.27.1 source) plus the prebuilt JNI bridge
+// from the csukuangfj 1.27.1 release (same release Sherpa's runtime comes
+// from). The module packages NO private libonnxruntime.so; the bridge
+// resolves Sherpa's copy at runtime.
 val visionOrtDir = layout.buildDirectory.dir("vision-ort-sdk")
 val buildVisionOrtJni by tasks.registering(Exec::class) {
     inputs.file(rootProject.file("scripts/build_ort_vision_jni.py"))
     outputs.dir(visionOrtDir)
     doFirst {
-        // Match app module: NDK lives under the SDK directory (ndkVersion is
-        // set on the app module; this library module resolves the path directly).
-        val ndkDir = File(android.sdkDirectory, "ndk/27.2.12479018")
         commandLine("python3", rootProject.file("scripts/build_ort_vision_jni.py"),
-            "--output", visionOrtDir.get().asFile,
-            "--android-ndk", ndkDir)
+            "--output", visionOrtDir.get().asFile)
     }
 }
 
