@@ -5,7 +5,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Observations only. No endpoint decision, transcript, audio, or action authority. */
+/** Raw model evidence. Only the current capture adapter may grant endpoint authority. */
 internal data class SmartTurnShadowResult(
     val generation: SmartTurnGeneration,
     val captureSampleBoundary: Long,
@@ -41,7 +41,7 @@ internal interface SmartTurnBackend : AutoCloseable {
 }
 
 /**
- * Explicit opt-in, unconnected shadow observer. One inference worker, zero queued requests,
+ * One retained inference worker, zero queued requests,
  * one expiring result slot. Timeout revokes publication and requests cooperative native stop;
  * it never frees/replaces a busy native owner or promises hard real-time cancellation.
  */

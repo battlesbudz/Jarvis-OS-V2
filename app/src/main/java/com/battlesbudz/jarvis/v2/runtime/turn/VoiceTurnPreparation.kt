@@ -296,13 +296,14 @@ internal class VoiceTurnPreparation(
         }
         val shadowObserver = try { resources.smartTurn.beginCapture(
             expectedCallId, request.asrTurnId, nativePauseGeneration,
-            enabled = request.comparison == null &&
+            enabled = directAudioTurn && request.comparison == null &&
                 com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(context),
             model = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.store(context).availableFile(),
             telemetry = shadowTelemetry,
             ownerIsCurrent = { exactShadowTurnJob?.isActive == true && call.state.armed &&
                 call.controller.currentCallId() == expectedCallId },
             observeCapture = correction == null,
+            endpointEnabled = directAudioTurn,
             admissionBlocker = {
                 when {
                     lifetime.nativeSpeculation?.consumedEncoder == true -> "gemma_speculation"

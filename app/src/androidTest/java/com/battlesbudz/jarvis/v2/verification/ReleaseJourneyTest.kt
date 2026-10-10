@@ -5755,9 +5755,12 @@ class ReleaseJourneyTest {
 
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    @Test fun test81_smartTurnShadowIsOptInAndDisablePersistsWithoutModels() {
+    @Test fun test81_smartTurnEndpointPersistsAndNativeControlMatchesPinnedModel() {
         val preferences = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
-        val key = "smart_turn_shadow_enabled"
+        val key = "smart_turn_endpoint_enabled"
+        val oldKey = "smart_turn_shadow_enabled"
+        val hadOldValue = preferences.contains(oldKey)
+        val oldValue = preferences.getBoolean(oldKey, false)
         val hadValue = preferences.contains(key)
         val original = preferences.getBoolean(key, false)
         val mode = VoiceInputMode.selected(context)
@@ -5775,33 +5778,45 @@ class ReleaseJourneyTest {
             device.waitForIdle()
         }
         try {
-            preferences.edit().remove(key).commit()
+            preferences.edit().remove(key).putBoolean(oldKey, false).commit()
             render(false)
-            val disabled = scrollTo(By.res("smart_turn_shadow_toggle"))
-            assertFalse("Live-call settings must not enable shadow/model setup", disabled.isEnabled)
-            assertFalse(preferences.getBoolean(key, false))
-            // Restore an already-enabled preference without downloading or loading weights.
+            val disabled = scrollTo(By.res("smart_turn_endpoint_toggle"))
+            assertFalse("Live-call settings must not change endpoint/model setup", disabled.isEnabled)
+            assertTrue(com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(context))
+            assertNotNull(scrollTo(By.text("Download Smart Turn (8.7 MB)")))
+            // Default-on endpoint control remains independently disableable without loading weights.
             preferences.edit().putBoolean(key, true).commit()
             render(true)
-            val disable = scrollTo(By.text("Disable Smart Turn shadow"))
-            assertEquals("Disable Smart Turn shadow", disable.text)
-            val toggle = scrollTo(By.res("smart_turn_shadow_toggle"))
+            val disable = scrollTo(By.text("Disable Smart Turn"))
+            assertEquals("Disable Smart Turn", disable.text)
+            val toggle = scrollTo(By.res("smart_turn_endpoint_toggle"))
             assertTrue("Disable control must be enabled and clickable", toggle.isEnabled && toggle.isClickable)
             toggle.click()
             // Input injection can return before the UI handler. Its Enable label is
             // published only after the synchronous preference update; find is bounded.
-            find(By.text("Enable Smart Turn shadow (8.7 MB)"))
+            find(By.text("Enable Smart Turn"))
             assertFalse(preferences.getBoolean(key, true))
             activity.recreate()
             render(true)
-            assertNotNull(scrollTo(By.text("Enable Smart Turn shadow (8.7 MB)")))
+            assertNotNull(scrollTo(By.text("Enable Smart Turn")))
             assertFalse(preferences.getBoolean(key, true))
             assertEquals(mode, VoiceInputMode.selected(context))
             assertEquals(captions, VoiceInputMode.captionEngine(context))
-            captureEvidence("smart_turn_shadow_opt_in_settings")
+            captureEvidence("smart_turn_endpoint_default_settings")
+            instrumentation.sendStatus(1, android.os.Bundle().apply {
+                putString("jarvisSmartTurnStart", "android-smart-turn-native-v1")
+            })
+            val nativeProbe = SmartTurnNativeJourneyProbe.run(instrumentation,
+                InstrumentationRegistry.getArguments().getString("jarvisSmartTurnInput"))
+            instrumentation.sendStatus(1, android.os.Bundle().apply {
+                putString("jarvisSmartTurnResult", org.json.JSONObject(nativeProbe.reportFields()).toString())
+            })
+            nativeProbe.assertPassed()
         } finally {
             if (hadValue) preferences.edit().putBoolean(key, original).commit()
             else preferences.edit().remove(key).commit()
+            if (hadOldValue) preferences.edit().putBoolean(oldKey, oldValue).commit()
+            else preferences.edit().remove(oldKey).commit()
         }
     }
 

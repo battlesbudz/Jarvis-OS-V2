@@ -495,3 +495,54 @@
 
 # Smart Turn JNI is compiled into the existing Sherpa library; retain exactly this bridge.
 -keep class com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnNative { *; }
+
+# test81 runs the pinned native turn model through the production endpoint adapter in
+# the separately shrunk test APK. Retain only these exact cross-DEX entry points.
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.voice.smartturn.NativeSmartTurnBackend {
+    public <init>(java.io.File);
+    public com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnInference infer(float[],long,java.util.concurrent.atomic.AtomicBoolean);
+    public void cancel(long);
+    public void close();
+}
+-keep class com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnInference {
+    public float getProbability();
+    public long getFrontendNanos();
+    public long getInferenceNanos();
+}
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.voice.SmartTurnEndpointPolicy {
+    public static final com.battlesbudz.jarvis.v2.voice.SmartTurnEndpointPolicy INSTANCE;
+    public com.battlesbudz.jarvis.v2.voice.CaptureEndpointState modelState(float);
+    public com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEnd$Decision decision(com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEnd$Decision,com.battlesbudz.jarvis.v2.voice.CaptureEndpointDecision,com.battlesbudz.jarvis.v2.voice.NativePauseEndpointPolicy$Eligibility,boolean,com.battlesbudz.jarvis.v2.voice.RawVadCoverage,long,long);
+}
+-keep enum com.battlesbudz.jarvis.v2.voice.CaptureEndpointState {
+    public static final com.battlesbudz.jarvis.v2.voice.CaptureEndpointState FALLBACK;
+    public static final com.battlesbudz.jarvis.v2.voice.CaptureEndpointState PENDING;
+    public static final com.battlesbudz.jarvis.v2.voice.CaptureEndpointState COMPLETE;
+    public static final com.battlesbudz.jarvis.v2.voice.CaptureEndpointState CONTINUE;
+    public static com.battlesbudz.jarvis.v2.voice.CaptureEndpointState[] values();
+    public static com.battlesbudz.jarvis.v2.voice.CaptureEndpointState valueOf(java.lang.String);
+}
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.voice.CaptureEndpointDecision {
+    public <init>(com.battlesbudz.jarvis.v2.voice.CaptureEndpointState,java.lang.Long);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEnd$Decision {
+    public <init>(long,java.lang.String);
+    public long getSilenceMs();
+    public java.lang.String getCue();
+}
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.voice.NativePauseEndpointPolicy {
+    public static final com.battlesbudz.jarvis.v2.voice.NativePauseEndpointPolicy INSTANCE;
+    public com.battlesbudz.jarvis.v2.voice.NativePauseEndpointPolicy$Eligibility eligibility(boolean,long,boolean,long,com.battlesbudz.jarvis.v2.voice.RawVadCoverage,boolean,long,boolean);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.NativePauseEndpointPolicy$Eligibility {
+    public <init>(boolean,java.lang.String);
+    public boolean getAllowed();
+    public java.lang.String getReason();
+}
+-keep class com.battlesbudz.jarvis.v2.voice.RawVadCoverage {
+    public <init>(long,long,long,int);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings {
+    public static final com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings INSTANCE;
+    public boolean enabled(android.content.Context);
+}

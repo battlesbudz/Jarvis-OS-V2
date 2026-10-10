@@ -74,7 +74,8 @@ internal class ReplyCaptureBenchmark(
         val exactCaptureJob = coroutineContext[kotlinx.coroutines.Job]
         val shadowObserver = try { shadowOwner.beginCapture(
             expectedCallId, plan.turnId, captureGeneration = 0,
-            enabled = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(applicationContext),
+            enabled = plan.directAudioTurn && com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(applicationContext),
+            endpointEnabled = plan.directAudioTurn,
             model = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.store(applicationContext).availableFile(),
             telemetry = shadowTelemetry,
             ownerIsCurrent = { exactCaptureJob?.isActive == true && shadowOwnerIsCurrent() },

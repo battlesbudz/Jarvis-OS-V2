@@ -30,29 +30,32 @@ A finite final appended-cache mutation is an explicit passing counterexample to
 any broader state-reference claim. No model, native rebuild, capsule, hosted
 rerun, Android execution or new release acceptance is claimed by these tests.
 
-## Smart Turn opt-in observations — 9 October 2026
+## Smart Turn native endpoint control — 10 October 2026
 
-An explicit default-off setting verifies the pinned auxiliary model before local
-microphone probability/timing observations. Capture and endpoint authority are
-unchanged. One retained worker, bounded snapshots/candidate frequency, cancellation
-and exact call/generation fencing keep ordinary voice independent of model setup.
+The installed pinned model is enabled by default for eligible native audio. Its
+COMPLETE verdict can close a current pause; CONTINUE suppresses early close until
+speech resumes, a fresh bounded reassessment says COMPLETE, or at least 3500 ms
+of sampled/classified quiet reaches fallback at an exactly covered boundary
+(3500–4200 ms across existing read phases). Missing/loading/busy/
+expired work adds no mandatory wait to ordinary endpointing. An explicit new
+preference preserves a disable choice without inheriting the old shadow flag.
+ASR-text mode and playback/quiet/segmentation guards remain intact.
 
-The source recovered after interruption is distinguished from newly rebuilt
-build/test/license support. [Recovery scope and fresh checks](smart-turn-recovery-2026-10-09.md)
-are the current evidence. Named journey81 covers opt-in/disable/recreation without
-weights. Android/NDK/shrunk linkage, phone costs and premature-cutoff calibration
-remain pending. All five profiles remain required; the later October 10 capacity
-review sets the Fold main deadline to 1,200 seconds and retains 900 for the other
-four, as recorded in the Build 1254 section below.
+`SmartTurnAudioEndpointTest` exercises the actual collector, bounded worker and
+PCM owner with synthetic acoustic/model outputs: 100 ms and irregular reads,
+65/120/220/expired inference scheduling, concurrent ready/PCM ordering, full
+retention, stale call/revision, continued/quiet speech, eight-pause budget,
+caption skipping versus mandatory text finalization, and cleanup. Existing
+Smart Turn, native-pause, capture-first and echo/final-verdict suites remain.
+Journey81 checks default-on/disable/recreation separately from its companion
+native probe with pinned temporary model input. No weights enter source, APK
+or output artifacts. All five release profiles retain their existing deadlines.
 
-Capture-first follow-ups now attach the same retained call observer after the old
-interruption listener joins. Observation admission additionally requires the exact
-old reply child to complete successfully, with safe native resources and current
-call/capture ownership. Raw retention never waits for that eligibility. Already
-sealed inputs keep the valid call worker while still applying disable, missing
-model and changed-call revocation. [Follow-up contract and checks](smart-turn-followup-2026-10-09.md)
-cover delayed cleanup, no-observation endpoints, echo reset, worker reuse and
-separate follow-up telemetry; this remains a host/API candidate pending release.
+[Endpoint policy, scheduling traces and coverage limits](smart-turn-endpoint-2026-10-10.md)
+distinguish source/host tests from pending release JNI and actual phone evidence.
+The [9 October shadow contract](smart-turn-recovery-2026-10-09.md) is historical;
+the same retained worker and old-reply cleanup gate now support endpoint control.
+
 
 ## Capture-first rearm candidate — 9 October 2026
 
