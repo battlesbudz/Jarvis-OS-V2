@@ -8,6 +8,24 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// The app already ships sherpa's libonnxruntime.so (1.27.1), whose versioned
+// OrtGetApiBase symbols are ABI-incompatible with this module's 1.22.0 JNI
+// bridge (same reason Moonshine's runtime copy is namespaced). Resolve the
+// AAR through a detached configuration, compile against only its
+// classes.jar, and ship a namespaced private copy of its native libs
+// (scripts/prepare_vision_ort.py) so the two runtimes never collide.
+val visionOrtSdk by configurations.creating { isTransitive = false }
+val visionOrtDir = layout.buildDirectory.dir("vision-ort-sdk")
+val extractVisionOrt by tasks.registering(Exec::class) {
+    inputs.files(visionOrtSdk)
+    inputs.file(rootProject.file("scripts/prepare_vision_ort.py"))
+    outputs.dir(visionOrtDir)
+    doFirst {
+        commandLine("python3", rootProject.file("scripts/prepare_vision_ort.py"),
+            visionOrtSdk.singleFile, visionOrtDir.get().asFile)
+    }
+}
+
 android {
     namespace = "com.battlesbudz.phoneinference"
     compileSdk = 35
@@ -27,10 +45,13 @@ android {
             jvmTarget.set(JvmTarget.JVM_17)
         }
     }
+
+    sourceSets.getByName("main").jniLibs.srcDir(visionOrtDir.map { it.dir("jni") })
 }
 
 dependencies {
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+    visionOrtSdk("com.microsoft.onnxruntime:onnxruntime-android:1.22.0@aar")
+    implementation(files(visionOrtDir.map { it.file("classes.jar") }).builtBy(extractVisionOrt))
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +91,8 @@ val downloadVisionModels: TaskProvider<Task> = tasks.register("downloadVisionMod
 
 android.sourceSets.getByName("main").assets.srcDir(generatedAssetsDir)
 
-// Ensure the models are downloaded before any build work reads the assets.
+// Ensure the models are downloaded and the namespaced ORT native libs are
+// extracted before any build work reads the assets or packages jniLibs.
 tasks.named("preBuild") {
-    dependsOn(downloadVisionModels)
+    dependsOn(downloadVisionModels, extractVisionOrt)
 }
