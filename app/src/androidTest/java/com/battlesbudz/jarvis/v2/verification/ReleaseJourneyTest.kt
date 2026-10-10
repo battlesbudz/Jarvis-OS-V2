@@ -3044,12 +3044,17 @@ class ReleaseJourneyTest {
         val originalAsr = "alpha beta wrong delta"
         val reference = "alpha beta gamma delta"
         var renderGeneration = 0
+        val committedGeneration = AtomicInteger(0)
         fun render(value: AndroidPipelineBenchmarkStore) {
             val generation = ++renderGeneration
             activity.onActivity { host -> host.setContent {
                 // A restored store represents a new process: do not reuse the prior
                 // screen's remembered selection, status or reference-dialog state.
                 androidx.compose.runtime.key(value, generation) {
+                    // setContent updates an existing ComposeView asynchronously. A screen
+                    // tag can still belong to the old owner; SideEffect acknowledges this
+                    // exact commit after old scopes/launchers are disposed and new ones registered.
+                    androidx.compose.runtime.SideEffect { committedGeneration.set(generation) }
                     androidx.compose.runtime.CompositionLocalProvider(
                         androidx.activity.compose.LocalActivityResultRegistryOwner provides exportProbe,
                         androidx.compose.ui.platform.LocalContext provides exportProbe.exportContext) {
@@ -3059,6 +3064,9 @@ class ReleaseJourneyTest {
                     }
                 }
             } }
+            exportProbe.awaitObserved("Benchmark screen owner replacement committed") {
+                committedGeneration.get() == generation
+            }
             device.waitForIdle()
             find(By.res("pipeline_benchmark_screen"))
         }

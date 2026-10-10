@@ -151,6 +151,11 @@
 -keep class androidx.compose.runtime.Composer { *; }
 -keep class androidx.compose.runtime.ComposerKt { *; }
 -keep class androidx.compose.runtime.ScopeUpdateScope { *; }
+# test45 acknowledges the committed replacement from the separate test DEX.
+# Preserve the exact descriptor; R8 otherwise removes its unused changed argument.
+-keep class androidx.compose.runtime.EffectsKt {
+    public static void SideEffect(kotlin.jvm.functions.Function0, androidx.compose.runtime.Composer, int);
+}
 -keep class androidx.compose.runtime.internal.ComposableLambdaKt { *; }
 -keep class androidx.compose.material3.MaterialThemeKt { *; }
 -keep class androidx.compose.material3.SurfaceKt { *; }

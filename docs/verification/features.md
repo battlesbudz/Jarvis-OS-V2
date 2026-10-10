@@ -4204,3 +4204,22 @@ All 11 focused tests pass in five assertion/debug/recovery configurations.
 Production cleanup and the caller's quarantine/rethrow path are unchanged.
 [Reproduction, source hashes and coverage limits](caption-reset-recovery-2026-10-09.md)
 retain the failure evidence. Exact-revision full release gates remain required.
+
+### Benchmark picker replacement acknowledgement (October 9, 2026)
+
+Build 1248 (`13a62a8374610fefda9b93c3213c559a9f97bef7`) exposed the same
+unacknowledged Compose replacement through two byte states: API 36 actual 16 KB
+read the old report at test45's second stale-destination check; compact Fold
+read an empty file at its first. The fixture's unchanged screen tag could still
+belong to the old owner after `setContent`. An exact-generation `SideEffect`
+receipt now establishes completed disposal/registration before delivering the
+held old result, using the existing five-second observation bound. All 57
+assertion lines, both stale-URI checks, successful fresh save and all prior
+waits/scenario deadlines remain required. A narrow R8 keep preserves the new
+three-argument SideEffect instrumentation ABI; production Kotlin is unchanged.
+Six deterministic actual-runtime host cases, including both precommit failures,
+eight repeated committed replacements, fresh same-scope admission/frozen payload
+and callback/IO cancellation boundaries, pass alongside 11 existing export JVM
+tests and 109+82 helper tests. [Evidence and explicit host limitations](benchmark-export-recreation-2026-10-09.md)
+retain the failed-run and dependency bindings. Fresh exact-revision complete
+signed/R8/five-profile Android verification remains required.
