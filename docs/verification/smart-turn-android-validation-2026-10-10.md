@@ -14,6 +14,10 @@ have its cross-DEX descriptors audited and pass all required emulator profiles.
   test assets and their decoded SHA-256 values are checked before inference.
   The adjacent test-asset manifest records generator provenance, exact source
   copies, and compressed plus decompressed byte counts/SHA-256 values.
+  Source assets retain their frozen `.pcm16le.gz` bytes. AAPT expands those
+  gzip assets into `.pcm16le` entries in the test APK; the probe opens the
+  packaged raw names and checks exact byte counts, EOF and decoded SHA-256
+  before inference. Source-copy checks alone do not verify this APK boundary.
   Their expected COMPLETE/CONTINUE sides of the upstream strict `> 0.5` threshold
   come from the [retained host receipt](evidence/smart-turn-host-2026-10-09/receipt.json).
   There is no invented probability tolerance or new semantic-accuracy claim.

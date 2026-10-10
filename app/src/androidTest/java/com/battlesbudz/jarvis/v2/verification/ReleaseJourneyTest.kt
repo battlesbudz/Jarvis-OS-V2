@@ -5789,7 +5789,9 @@ class ReleaseJourneyTest {
             render(true)
             val disable = scrollTo(By.text("Disable Smart Turn"))
             assertEquals("Disable Smart Turn", disable.text)
-            val toggle = scrollTo(By.res("smart_turn_endpoint_toggle"))
+            // Both compositions show Disable; await the enabled tagged parent so the
+            // previous live-call composition cannot satisfy readiness by label alone.
+            val toggle = find(By.res("smart_turn_endpoint_toggle").enabled(true).clickable(true))
             assertTrue("Disable control must be enabled and clickable", toggle.isEnabled && toggle.isClickable)
             toggle.click()
             // Input injection can return before the UI handler. Its Enable label is

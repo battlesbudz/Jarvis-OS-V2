@@ -13,7 +13,6 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import java.util.zip.GZIPInputStream
 
 /** Test APK only. One native owner, two frozen synthetic inputs, no microphone/model download. */
 internal object SmartTurnNativeJourneyProbe {
@@ -167,7 +166,8 @@ internal object SmartTurnNativeJourneyProbe {
     }
 
     private fun fixture(instrumentation: Instrumentation, name: String, samples: Int, expectedHash: String): FloatArray {
-        val bytes = GZIPInputStream(instrumentation.context.assets.open("smart-turn/$name.pcm16le.gz")).use { source ->
+        // AAPT expands source .gz assets and removes that suffix in the test APK.
+        val bytes = instrumentation.context.assets.open("smart-turn/$name.pcm16le").use { source ->
             val data = ByteArray(samples * 2)
             var count = 0
             while (count < data.size) {
