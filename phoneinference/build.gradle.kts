@@ -8,21 +8,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// The app already ships sherpa's libonnxruntime.so (1.27.1), whose versioned
-// OrtGetApiBase symbols are ABI-incompatible with this module's 1.22.0 JNI
-// bridge (same reason Moonshine's runtime copy is namespaced). Resolve the
-// AAR through a detached configuration, compile against only its
-// classes.jar, and ship a namespaced private copy of its native libs
-// (scripts/prepare_vision_ort.py) so the two runtimes never collide.
-val visionOrtSdk by configurations.creating { isTransitive = false }
+// Vision uses Sherpa's ONNX Runtime 1.27.1. Microsoft never published the
+// 1.27.1 Android AAR to Maven, so the JNI bridge (libonnxruntime4j_jni.so)
+// is built from the v1.27.1 source by scripts/build_ort_vision_jni.py and
+// linked against Sherpa's runtime. The module packages NO private
+// libonnxruntime.so; the bridge resolves Sherpa's copy at runtime.
 val visionOrtDir = layout.buildDirectory.dir("vision-ort-sdk")
-val extractVisionOrt by tasks.registering(Exec::class) {
-    inputs.files(visionOrtSdk)
-    inputs.file(rootProject.file("scripts/prepare_vision_ort.py"))
+val buildVisionOrtJni by tasks.registering(Exec::class) {
+    inputs.file(rootProject.file("scripts/build_ort_vision_jni.py"))
     outputs.dir(visionOrtDir)
     doFirst {
-        commandLine("python3", rootProject.file("scripts/prepare_vision_ort.py"),
-            visionOrtSdk.singleFile, visionOrtDir.get().asFile)
+        val ndkDir = android.ndkDirectory
+        commandLine("python3", rootProject.file("scripts/build_ort_vision_jni.py"),
+            "--output", visionOrtDir.get().asFile,
+            "--android-ndk", ndkDir)
     }
 }
 
@@ -50,8 +49,7 @@ android {
 }
 
 dependencies {
-    visionOrtSdk("com.microsoft.onnxruntime:onnxruntime-android:1.22.0@aar")
-    implementation(files(visionOrtDir.map { it.file("classes.jar") }).builtBy(extractVisionOrt))
+    implementation(files(visionOrtDir.map { it.file("classes.jar") }).builtBy(buildVisionOrtJni))
 }
 
 // ---------------------------------------------------------------------------
@@ -91,8 +89,8 @@ val downloadVisionModels: TaskProvider<Task> = tasks.register("downloadVisionMod
 
 android.sourceSets.getByName("main").assets.srcDir(generatedAssetsDir)
 
-// Ensure the models are downloaded and the namespaced ORT native libs are
-// extracted before any build work reads the assets or packages jniLibs.
+// Ensure the models are downloaded and the 1.27.1 JNI bridge is built before
+// any build work reads the assets or packages jniLibs.
 tasks.named("preBuild") {
-    dependsOn(downloadVisionModels, extractVisionOrt)
+    dependsOn(downloadVisionModels, buildVisionOrtJni)
 }

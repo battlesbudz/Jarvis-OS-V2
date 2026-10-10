@@ -306,6 +306,12 @@ jobs:
           path: app/build/sherpa-native
           key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'scripts/sherpa_jni_profile.py') }}
 
+      - name: Cache vision ORT JNI bridge
+        uses: actions/cache@v4
+        with:
+          path: phoneinference/build/vision-ort-sdk
+          key: vision-ort-jni-1271-${{ runner.os }}-${{ hashFiles('scripts/build_ort_vision_jni.py') }}
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
