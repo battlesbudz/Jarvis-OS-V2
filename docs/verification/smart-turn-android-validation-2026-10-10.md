@@ -118,3 +118,42 @@ The Android result, once obtained, can establish native/wrapper/control-input
 compatibility on the declared disposable emulator matrix. It cannot establish
 natural-language endpoint accuracy, real microphone behavior, physical Fold
 latency, thermals, or final device signoff.
+
+## Settings composition boundary (Build 1264)
+
+Build 1264, run `38047133140`, retained API 30's `StaleObjectException`
+at journey 81's `disable.text` read, before the enabled-parent lookup and tap.
+The old and new compositions both contained the Disable label; retaining a
+label node across replacement did not establish the new control's state.
+
+Journey 81 now observes the initial disabled state through one selector predicate.
+After the enabled render, a selector requires the exact resource ID, enabled and
+clickable parent, and its exact `Disable Smart Turn` text descendant together.
+Readiness uses `UiObject.waitForExists(15_000)`. The one `UiObject.click()` resolves
+that same complete selector again, using a temporarily zero selector timeout;
+replacement by an ineligible/missing control fails without another readiness
+window. The prior global timeout is restored in `finally`. The label's visible
+center is the tap point inside the selected button. No `UiObject2` returned by
+scrolling or an earlier composition is read or clicked.
+
+Only read-only lookup polls. There is one action call, with no action retry on
+missing acknowledgment or exception. The existing Enable-label observation and
+preference assertion still establish completion, followed by recreation,
+persistence, input/caption-mode, native-probe and preference-cleanup checks.
+Migration/default-on and model-download-label checks are unchanged. The initial
+disabled-state observation now has a separate 15,000-ms polling window;
+enabled-control readiness retains its 15,000-ms argument, final dispatch adds no
+selector wait, and the outer suite caps are unchanged. UiAutomator's polling
+granularity and synchronous idle/accessibility/input operations are not strict
+wall-clock caps.
+
+Thirty source-extracted host cases execute the real cached UiAutomator 2.3.0
+selector, query and `UiObject` bytecode against node/clock/input adapters and the
+retained failure hierarchy. They cover replaced nodes, old disabled compositions,
+wrong labels/parents, hidden/missing controls, one dispatch and timeout restoration.
+Six rejected mutations cover relaxed state/label conditions, a second wait,
+replayed action and leaked timeout. The full extracted journey, production
+settings UI and native-probe/policy sources compile against cached Android/Compose
+APIs. These are host/API checks, not Android timing, JNI/model inference, R8/APK,
+disk-persistence or device verification. A fresh exact-revision release gate is
+still required.

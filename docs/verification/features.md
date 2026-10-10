@@ -48,7 +48,10 @@ retention, stale call/revision, continued/quiet speech, eight-pause budget,
 caption skipping versus mandatory text finalization, and cleanup. Existing
 Smart Turn, native-pause, capture-first and echo/final-verdict suites remain.
 Journey81 checks default-on/disable/recreation separately from its companion
-native probe with pinned temporary model input. No weights enter source, APK
+native probe with pinned temporary model input. Its [composition-safe settings
+action](smart-turn-android-validation-2026-10-10.md#settings-composition-boundary-build-1264)
+requires the exact label under the enabled tagged parent and re-resolves that
+selector for one tap; source-extracted host/API checks are not Android evidence. No weights enter source, APK
 or output artifacts. All five release profiles retain their existing deadlines.
 
 [Endpoint policy, scheduling traces and coverage limits](smart-turn-endpoint-2026-10-10.md)

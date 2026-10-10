@@ -35,6 +35,7 @@ import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
@@ -3211,7 +3212,9 @@ class ReleaseJourneyTest {
             find(By.res("pipeline_benchmark_save_text")).click()
             exportProbe.awaitObserved("Picker request observed") { exportProbe.creates.size == 1 }
             // The picker is controlled so the underlying screen can scroll/recompose while pending.
-            benchmarkScrollTo(By.res("pipeline_benchmark_sample_$completedId"))
+            // Overlap discovery viewports and settle the expanded sample header before observing it.
+            benchmarkScrollTo(By.res("pipeline_benchmark_sample_$completedId"),
+                sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35)
             assertFalse(device.hasObject(By.res("pipeline_benchmark_save_text")))
             exportProbe.completePending()
             benchmarkScrollTo(By.res("pipeline_benchmark_save_text").enabled(true), towardTop = true)
@@ -5780,20 +5783,31 @@ class ReleaseJourneyTest {
         try {
             preferences.edit().remove(key).putBoolean(oldKey, false).commit()
             render(false)
-            val disabled = scrollTo(By.res("smart_turn_endpoint_toggle"))
-            assertFalse("Live-call settings must not change endpoint/model setup", disabled.isEnabled)
+            scrollTo(By.res("smart_turn_endpoint_toggle"))
+            assertTrue("Live-call settings must not change endpoint/model setup",
+                device.wait(Until.hasObject(By.res("smart_turn_endpoint_toggle").enabled(false)), 15_000))
             assertTrue(com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(context))
             assertNotNull(scrollTo(By.text("Download Smart Turn (8.7 MB)")))
             // Default-on endpoint control remains independently disableable without loading weights.
             preferences.edit().putBoolean(key, true).commit()
             render(true)
-            val disable = scrollTo(By.text("Disable Smart Turn"))
-            assertEquals("Disable Smart Turn", disable.text)
-            // Both compositions show Disable; await the enabled tagged parent so the
-            // previous live-call composition cannot satisfy readiness by label alone.
-            val toggle = find(By.res("smart_turn_endpoint_toggle").enabled(true).clickable(true))
-            assertTrue("Disable control must be enabled and clickable", toggle.isEnabled && toggle.isClickable)
-            toggle.click()
+            scrollTo(By.res("smart_turn_endpoint_toggle"))
+            // UiObject resolves this complete selector inside click(), not a UiObject2
+            // cached from either composition. Tap the exact label within its enabled,
+            // clickable tagged parent. Only lookup polls; the action is dispatched once.
+            val disable = UiSelector().resourceId("smart_turn_endpoint_toggle")
+                .enabled(true).clickable(true).childSelector(UiSelector().text("Disable Smart Turn"))
+            assertTrue("Disable Smart Turn must be inside the enabled, clickable control",
+                device.findObject(disable).waitForExists(15_000))
+            val configuration = Configurator.getInstance()
+            val selectorTimeout = configuration.waitForSelectorTimeout
+            try {
+                // Re-resolve at dispatch; disappearance fails without a second wait.
+                configuration.waitForSelectorTimeout = 0
+                device.findObject(disable).click()
+            } finally {
+                configuration.waitForSelectorTimeout = selectorTimeout
+            }
             // Input injection can return before the UI handler. Its Enable label is
             // published only after the synchronous preference update; find is bounded.
             find(By.text("Enable Smart Turn"))
