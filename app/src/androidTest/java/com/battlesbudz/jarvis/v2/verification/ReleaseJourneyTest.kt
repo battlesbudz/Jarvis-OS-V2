@@ -4465,6 +4465,7 @@ class ReleaseJourneyTest {
         val changedBack = checkNotNull(ledger.revise(changedOnce.id, changedOnce.generation, tapRequest("n0")))
         val fresh = ledger.requestApproval(changedBack.id, changedBack.generation, "native", MobileToolCatalog.VERSION)
         val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
+        val approvalCompleted = java.util.concurrent.CountDownLatch(1)
         val decide: (String, Long, String) -> Unit = { id, generation, command ->
             val a = ledger.get(id)?.takeIf { it.generation == generation }
             if (a != null && command == "approve") {
@@ -4478,6 +4479,7 @@ class ReleaseJourneyTest {
                 }
             }
             journal.value = ledger.journal()
+            approvalCompleted.countDown()
         }
         try {
             activity.onActivity { host -> host.setContent {
@@ -4489,21 +4491,22 @@ class ReleaseJourneyTest {
             find(By.res("phone_tasks_open")).click()
             captureEvidence("m1d_screen_approval")
             find(By.res("task_approve_${fresh.task.id}")).click()
-            device.waitForIdle()
-            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
-            while (bridge.tapped.isEmpty() && android.os.SystemClock.uptimeMillis() < deadline) {
-                Thread.sleep(200)
+            // The tap is only an intermediate effect: the UI callback still has
+            // to save its receipt, show Stop and publish the journal afterward.
+            assertTrue("Panel approval callback must complete within the UI deadline",
+                approvalCompleted.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            activity.onActivity {
+                assertEquals("approved tap must dispatch exactly once", listOf("n0"), bridge.tapped.map { it.id })
+                assertEquals("session grant must belong to the approved group", group.id, session.holderGroupId)
+                assertEquals(ToolTaskState.SUCCEEDED, ledger.get(fresh.task.id)?.state)
+                assertTrue("approval must be consumed", checkNotNull(approvals.get(fresh.approval.id)).consumed)
+                assertTrue("Stop overlay shows while the admitted group holds the lease", bridge.overlayShown)
+                // A finished group releases the lease and the overlay hides (T04).
+                assertTrue(session.releaseIf(group.id))
+                bridge.hideStopOverlay()
+                assertFalse(session.isAdmitted)
+                assertFalse(bridge.overlayShown)
             }
-            assertEquals("approved tap must dispatch exactly once", listOf("n0"), bridge.tapped.map { it.id })
-            assertEquals("session grant must belong to the approved group", group.id, session.holderGroupId)
-            assertEquals(ToolTaskState.SUCCEEDED, ledger.get(fresh.task.id)?.state)
-            assertTrue("approval must be consumed", checkNotNull(approvals.get(fresh.approval.id)).consumed)
-            assertTrue("Stop overlay shows while the admitted group holds the lease", bridge.overlayShown)
-            // A finished group releases the lease and the overlay hides (T04).
-            assertTrue(session.releaseIf(group.id))
-            bridge.hideStopOverlay()
-            assertFalse(session.isAdmitted)
-            assertFalse(bridge.overlayShown)
         } finally { file.delete() }
     }
 

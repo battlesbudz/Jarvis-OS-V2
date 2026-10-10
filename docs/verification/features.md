@@ -4347,3 +4347,35 @@ cached Android/Compose/UiAutomator APIs, with explicit ActivityScenario,
 navigation and model-setup seams. This is harness/API evidence, not a fresh
 Android, disk-persistence, minification or APK verification pass. The full
 exact-revision release gate remains required.
+
+
+### Build 1256 panel-approval completion observation (October 10, 2026)
+
+Build 1256 ([run 38027820843](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/38027820843),
+source `43df0eca06530d893922b3bcafb01134d7c07c50`) retained API 30's
+`test59` failure at the Stop-overlay assertion. Its preceding exact-tap,
+group-lease, successful-ledger and consumed-approval assertions passed. The
+log records the Approve click at 06:29:28.623 and failure-evidence capture at
+06:29:28.671 UTC. The screenshot still shows the pending panel, but neither
+that frame nor the log establishes the exact callback interleaving.
+
+The fixture's UI callback first dispatches the fake tap, then commits the
+receipt, sets the Stop flag and publishes the journal. Previously the test
+observed only the earlier, unsynchronized tap list from the instrumentation
+thread. That list does not acknowledge completion or publish later writes.
+The corrected fixture signals a latch only after the whole callback publishes
+the journal, awaits it for the existing 10-second allowance, then checks all
+original assertions and performs lease/overlay release on the Activity owner.
+The latch establishes visibility of earlier callback writes; the owner boundary
+keeps its mutable state access and cleanup serialized. The ActivityScenario
+boundary is separate from the callback timer, so this is not a strict overall
+wall-clock cap. Missing or interrupted completion still fails. The panel opens
+once and Approve is clicked once; no retries, sleeps, production changes,
+assertion removals, scenario changes or suite-budget changes are introduced.
+
+Source-bound deterministic host checks and cached real Android/Compose API
+compilation are recorded in [the repair evidence](panel-approval-completion-2026-10-10.md).
+They do not establish actual Android input delivery, Compose rendering,
+accessibility overlay behavior, R8 compatibility or a verified APK. Build 1256
+remains failed evidence; a fresh full release gate for the exact repaired
+revision is required.
