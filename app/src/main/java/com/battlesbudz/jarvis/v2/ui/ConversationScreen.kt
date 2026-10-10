@@ -22,12 +22,7 @@ import com.battlesbudz.jarvis.v2.chat.*
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
-import com.battlesbudz.jarvis.v2.vision.NativeVision
-import com.battlesbudz.jarvis.v2.vision.VisionContextFormatter
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,8 +88,6 @@ internal fun ConversationScreen(
     val inputBusy = preparingAttachment || dictating
     val pendingAttachment = pendingUri?.let { ChatAttachment(it, pendingKind) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    var visionBusy by remember { mutableStateOf(false) }
     DisposableEffect(thread.id) {
         onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true)
             pendingUri?.let { ChatMediaStore.discard(context, ChatAttachment(it, pendingKind)) } }
@@ -280,36 +273,10 @@ internal fun ConversationScreen(
                                             pendingKind = attached.kind; pendingUri = attached.uri; error = null
                                         })
                                 } } else null)
-                            if (pendingAttachment != null) IconButton(
-                                enabled = !sending && !inputBusy && !visionBusy,
-                                onClick = {
-                                    val uriString = pendingUri ?: return@IconButton
-                                    visionBusy = true
-                                    scope.launch {
-                                        try {
-                                            val bytes = withContext(Dispatchers.IO) {
-                                                context.contentResolver.openInputStream(android.net.Uri.parse(uriString))
-                                                    ?.use { it.readBytes() }
-                                                    ?: throw IllegalStateException("Could not read the attached image.")
-                                            }
-                                            if (bytes.size > 12 * 1024 * 1024) {
-                                                throw IllegalStateException("Image is over the 12 MB limit.")
-                                            }
-                                            val snapshot = NativeVision.analyze(bytes, context.assets)
-                                            val summary = VisionContextFormatter.summaryLine(snapshot)
-                                            history.updateReply(thread.id, java.util.UUID.randomUUID().toString(), summary, complete = true)
-                                        } catch (error: Exception) {
-                                            history.updateReply(thread.id, java.util.UUID.randomUUID().toString(),
-                                                "Vision lookup failed: ${error.message ?: "unknown error"}. " +
-                                                    "The on-device vision models could not run.",
-                                                complete = true)
-                                        } finally {
-                                            visionBusy = false
-                                        }
-                                    }
-                                }) {
-                                Text(if (visionBusy) "\u2026" else "\uD83D\uDD0D")
-                            }
+                            // Vision is automatic now: every sent image runs the
+                            // in-process native models in ConversationGeneration
+                            // and fuses the results into Gemma's prompt. No
+                            // manual trigger.
                             IconButton(enabled = !sending && !inputBusy, onClick = { showVoice() },
                                 modifier = Modifier.testTag("voice_call_open")) {
                                 ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_call,
