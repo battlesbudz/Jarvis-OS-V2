@@ -18,6 +18,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.battlesbudz.jarvis.v2.voice.AsrEngine
 import com.battlesbudz.jarvis.v2.voice.SpeechCaptureProfile
 import com.battlesbudz.jarvis.v2.voice.VoiceInputMode
+import com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings
+import java.io.File
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -36,6 +38,14 @@ class VoiceInputSettingsTest {
     private val preferences get() = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
     private val visible = mutableStateOf(true)
     private val enabled = mutableStateOf(true)
+    private val busyChanges = mutableListOf<Boolean>()
+    private val smartTurnDirectory get() = File(context.filesDir, "voice-models/smart-turn-v3.2")
+
+    private fun assertNoSmartTurnDownload() {
+        assertFalse("Toggling endpoint control must not start setup", busyChanges.any { it })
+        assertFalse("Toggling must not create model or partial-download storage", smartTurnDirectory.exists())
+        assertNull(SmartTurnSettings.store(context).availableFile())
+    }
 
     @Before fun reset() { preferences.edit().clear().commit() }
     @After fun cleanup() { preferences.edit().clear().commit() }
@@ -45,7 +55,7 @@ class VoiceInputSettingsTest {
         compose.setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    if (visible.value) VoiceInputSettings(enabled.value, onBusy = {})
+                    if (visible.value) VoiceInputSettings(enabled.value, onBusy = { busyChanges.add(it) })
                 }
             }
         }
@@ -138,22 +148,41 @@ class VoiceInputSettingsTest {
         assertEquals("communication_noise_filtered", preferences.getString("capture_profile", null))
         assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
     }
-    @Test fun smartTurnShadowDefaultsOffAndCannotChangeDuringCall() {
+    @Test fun smartTurnEndpointDefaultsOnAndControlsCannotChangeDuringCall() {
+        // Retired observation-only preferences must not opt out of actual endpoint control.
+        preferences.edit().putBoolean("smart_turn_shadow_enabled", false).commit()
         mount()
-        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().assertTextContains("Enable Smart Turn shadow (8.7 MB)")
-        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", false))
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").performScrollTo().assertTextContains("Disable Smart Turn")
+        assertTrue(SmartTurnSettings.enabled(context))
+        assertFalse("Reading the enabled default must not write a preference", preferences.contains("smart_turn_endpoint_enabled"))
+        compose.onNodeWithTag("smart_turn_model_download").performScrollTo().assertTextContains("Download Smart Turn (8.7 MB)")
         compose.runOnIdle { enabled.value = false }
-        compose.onNodeWithTag("smart_turn_shadow_toggle").assertIsNotEnabled()
-        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", false))
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").assertIsNotEnabled()
+        compose.onNodeWithTag("smart_turn_model_download").assertIsNotEnabled()
+        assertTrue(SmartTurnSettings.enabled(context))
+        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", true))
+        assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
         assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
+        assertNoSmartTurnDownload()
     }
     @Test fun disablingSmartTurnPersistsWithoutAnyModelDownload() {
-        preferences.edit().putBoolean("smart_turn_shadow_enabled", true).commit()
+        SmartTurnSettings.setEnabled(context, true)
         mount()
-        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().performClick()
-        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", true))
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").performScrollTo().assertTextContains("Disable Smart Turn").performClick()
+        compose.waitForIdle()
+        assertFalse(preferences.getBoolean("smart_turn_endpoint_enabled", true))
+        assertFalse(SmartTurnSettings.enabled(context))
         reopenSettings()
-        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().assertTextContains("Enable Smart Turn shadow (8.7 MB)")
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").performScrollTo().assertTextContains("Enable Smart Turn")
+        assertNoSmartTurnDownload()
+        // Re-enabling is also a preference change; the separate download button owns setup.
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").performClick()
+        compose.waitForIdle()
+        assertTrue(preferences.getBoolean("smart_turn_endpoint_enabled", false))
+        reopenSettings()
+        compose.onNodeWithTag("smart_turn_endpoint_toggle").performScrollTo().assertTextContains("Disable Smart Turn")
+        compose.onNodeWithTag("smart_turn_model_download").performScrollTo().assertTextContains("Download Smart Turn (8.7 MB)")
+        assertNoSmartTurnDownload()
         assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
         assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
     }
