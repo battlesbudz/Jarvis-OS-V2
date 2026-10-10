@@ -64,6 +64,8 @@ internal class WorkflowCoordinator(
     private val recordDiagnostic: (String) -> Unit,
     private val reportError: (String) -> Unit,
     private val onJournalChanged: () -> Unit = {},
+    /** M4: the shared browser runtime; null when the browser path is not installed. */
+    private val browserRuntime: com.battlesbudz.jarvis.v2.actions.BrowserRuntime? = null,
 ) : ReminderScheduling {
     /** The runtime startup barrier invokes this once, before accepting alarm work. */
     fun recoverAfterRestart(): Boolean = try {
@@ -336,8 +338,12 @@ internal class WorkflowCoordinator(
         workflowLedger = workflowLedger,
         phoneActionLedger = phoneActionLedger,
         executorFactory = {
-            AndroidMobileActionExecutor(appContext,
+            val base = AndroidMobileActionExecutor(appContext,
                 canLaunchDirectly = { isActivityVisible() }, onDiagnostic = recordDiagnostic)
+            // M4: browse tools dispatch through the shared browser session;
+            // without the runtime the decorator is absent and the base
+            // executor fails browse actions closed.
+            browserRuntime?.decorate(base) ?: base
         },
         occurrencePipelineFactory = { executor, occurrence -> phoneActionPipeline(executor, occurrence.id) }
     )

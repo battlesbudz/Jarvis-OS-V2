@@ -73,7 +73,11 @@ class ToolTaskLedger(
         // model-proposed tap parked for approval), but they stay
         // non-dispatchable until an exact approval authorizes them
         // (isDispatchEligible); routine grants still cannot cover them.
-        require(requests.size in 1..3 && requests.all { it.isRoutineEligible() || it.name in SCREEN_MUTATION_TOOLS })
+        // M4: browse_submit may be admitted for the same approval parking
+        // (D11); it stays non-dispatchable until the exact approval admits
+        // the browser session, and routine grants still cannot cover it.
+        require(requests.size in 1..3 && requests.all { it.isRoutineEligible() ||
+            it.name in SCREEN_MUTATION_TOOLS || it.name in BROWSE_APPROVAL_TOOLS })
         require(conversationId.length in 1..256 && validForMs > 0)
         require(authority != ToolAuthority.ROUTINE || grantId != null)
         val at = now()
@@ -204,8 +208,10 @@ class ToolTaskLedger(
     fun revise(id: String, expectedGeneration: Long, request: ActionRequest): ToolTaskAttempt? {
         // M1d: screen targets are the revisable case (a changed tap target
         // invalidates the prior approval, D13); they still need a fresh exact
-        // approval to dispatch.
-        require(request.isRoutineEligible() || request.name in SCREEN_MUTATION_TOOLS)
+        // approval to dispatch. M4: a changed browse_submit token is the
+        // same shape (D11).
+        require(request.isRoutineEligible() || request.name in SCREEN_MUTATION_TOOLS ||
+            request.name in BROWSE_APPROVAL_TOOLS)
         var revised: ToolTaskAttempt? = null
         store.updateJournal { j ->
             val a = j.attempts.find { it.id == id && it.generation == expectedGeneration &&

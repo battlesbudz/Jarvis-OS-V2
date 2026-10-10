@@ -125,4 +125,34 @@ class PhoneTaskCoordinatorTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun browseSubmitIsParkedForApprovalNamingTheDestination() {
+        // M4 (D11): a model-proposed browse_submit parks as WAITING_APPROVAL
+        // with a receipt naming the destination host the user will review.
+        val directory = Files.createTempDirectory("phone-browse-park").toFile()
+        try {
+            val ledger = ToolTaskLedger(FileToolTaskStore(File(directory, "journal.json")))
+            val session = BrowserSession()
+            val page = session.openPage(
+                url = "https://example.com/login", title = "Example login", textExcerpt = "Sign in",
+                links = emptyList(),
+                forms = listOf(BrowserForm(id = "form0", actionUrl = "https://example.com/session",
+                    method = "POST", fields = listOf(BrowserField("f0", "Email", FieldKind.EMAIL)),
+                    submitLabel = "Sign in")))
+            session.noteFingerprint("fp-login")
+            val coordinator = PhoneTaskCoordinator(CoroutineScope(Dispatchers.Unconfined),
+                androidx.test.core.app.ApplicationProvider.getApplicationContext(), { ledger }, { false },
+                { MobileActionExecutor { ExecutionResult(true, "effect") } }, { true },
+                { _, _, _, _ -> }, com.battlesbudz.jarvis.v2.voice.SilentWorkController(), {},
+                browserSession = session)
+            val result = coordinator.parkBrowseSubmitForApproval(
+                ActionRequest("browse_submit", mapOf("token" to page.pageToken)), "conversation-1")
+            assertFalse(result.succeeded)
+            assertTrue(result.message, result.message.contains("to example.com"))
+            assertTrue(result.message, result.message.contains("Submit the form"))
+            val attempt = ledger.snapshot().single()
+            assertEquals(ToolTaskState.WAITING_APPROVAL, attempt.state)
+            assertEquals("browse_submit", attempt.request.name)
+        } finally { directory.deleteRecursively() }
+    }
+
 }

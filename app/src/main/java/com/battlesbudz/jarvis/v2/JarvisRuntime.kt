@@ -193,6 +193,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private val phoneActionStore by lazy {
         com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
     }
+    /**
+     * M4: the shared browser runtime path — session owner, WebView bridge,
+     * and the browse dispatch decorator. The model-visible browse tools open
+     * exactly when this runtime is installed in the production executor
+     * factories below (see [com.battlesbudz.jarvis.v2.actions.MobileToolCatalog.BrowserRuntimeGate]).
+     */
+    private val browserRuntime by lazy {
+        com.battlesbudz.jarvis.v2.actions.BrowserRuntime(this, diagnosticRecorder::recordImportant)
+    }
     private val phoneTaskCoordinator by lazy {
         PhoneTaskCoordinator(
             scope = runtimeScope,
@@ -202,15 +211,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             },
             isDeviceLocked = { getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true },
             createExecutor = {
-                AndroidMobileActionExecutor(this, canLaunchDirectly = { activityVisible },
-                    onDiagnostic = diagnosticRecorder::recordImportant)
+                browserRuntime.decorate(AndroidMobileActionExecutor(this, canLaunchDirectly = { activityVisible },
+                    onDiagnostic = diagnosticRecorder::recordImportant))
             },
             conversationExists = { id -> conversationHistory.list().any { it.id == id } },
             projectReply = { conversationId, replyId, text, receipts ->
                 conversationHistory.updateReply(conversationId, replyId, text, true, receipts)
             },
             silentWork = silentWork,
-            recordDiagnostic = diagnosticRecorder::recordImportant)
+            recordDiagnostic = diagnosticRecorder::recordImportant,
+            browserSession = browserRuntime.session)
     }
     internal val phoneTasks get() = phoneTaskCoordinator.tasks
     internal val phoneTaskError get() = phoneTaskCoordinator.error
@@ -235,6 +245,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal fun parkScreenTaskForApproval(request: com.battlesbudz.jarvis.v2.actions.ActionRequest):
         com.battlesbudz.jarvis.v2.actions.ExecutionResult =
         phoneTaskCoordinator.parkScreenTaskForApproval(request, conversationHistory.current.value.id)
+    /**
+     * M4: a model-proposed browse_submit never auto-dispatches (D11). Park
+     * it in the ledger awaiting the user's explicit approval.
+     */
+    internal fun parkBrowseSubmitForApproval(request: com.battlesbudz.jarvis.v2.actions.ActionRequest,
+        conversationId: String): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        phoneTaskCoordinator.parkBrowseSubmitForApproval(request, conversationId)
     // -- M2 reusable workflows / M3 ecosystem providers / reminders --------
     private val workflowCoordinator by lazy {
         WorkflowCoordinator(
@@ -246,7 +263,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             reportError = { message -> mainHandler.post { phoneTaskCoordinator.reportError(message) }; Unit },
             // Workflow dispatch runs off Main. Snapshot its already-durable boundaries on
             // the existing presentation dispatcher; observation never resumes a task.
-            onJournalChanged = { mainHandler.post { phoneTaskCoordinator.refreshPhoneTasks() }; Unit })
+            onJournalChanged = { mainHandler.post { phoneTaskCoordinator.refreshPhoneTasks() }; Unit },
+            browserRuntime = browserRuntime)
     }
     /** Settings projection: saved workflows plus connected tools. Chat stays the operating surface. */
     internal val workflowSettings get() = workflowCoordinator.workflowSettings
@@ -311,6 +329,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         get() = voiceCallState.output
         set(value) { voiceCallState.output = value }
     init {
+        // M4: the browser runtime gate opens exactly when the production
+        // runtime path (decorator + session owner + approval UI) is installed
+        // — this class installs all three below. The flip lives here, not in
+        // the browserRuntime lazy: LiteRT schema generation via
+        // MobileToolCatalog.all() may run before first browser use.
+        com.battlesbudz.jarvis.v2.actions.MobileToolCatalog.BrowserRuntimeGate.wired = true
         modelStore = ModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
         nativeMemoryStateToken = sessionPreferences.getString("approved_memory_context_token", null)
@@ -615,18 +639,21 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     fallback = { contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream() })
             }, diagnostics,
                 // M1d: model-proposed screen mutations never auto-dispatch
-                // (D23); park them for the user's explicit approval.
+                // (D23); M4: model-proposed browse_submit never auto-dispatches
+                // (D11). Park them for the user's explicit approval.
                 onNeedsApproval = { request ->
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        parkScreenTaskForApproval(request)
+                        val conversationId = conversationHistory.current.value.id
+                        if (request.name == "browse_submit") parkBrowseSubmitForApproval(request, conversationId)
+                        else parkScreenTaskForApproval(request)
                     }
                 }),
             ConversationRecovery(models::reset, references, factualityVerifier, turnOrchestrator::automaticFallbackQuery, diagnostics),
             promptBuilder, { prompt, entries -> actionIntentRouter.classifyActionIntent(prompt, entries) != null },
             turnOrchestrator::recordResponse,
             createActions = { id, onResult -> ConversationActions(
-                executor = { AndroidMobileActionExecutor(this, canLaunchDirectly = { activityVisible },
-                    onDiagnostic = diagnosticRecorder::recordImportant) },
+                executor = { browserRuntime.decorate(AndroidMobileActionExecutor(this, canLaunchDirectly = { activityVisible },
+                    onDiagnostic = diagnosticRecorder::recordImportant)) },
                 admit = ::admitPhoneTask, execute = ::executePhoneAction, cancelUnfinished = ::cancelPhoneTask,
                 conversationId = id, onActionResult = onResult) },
             createBenchmark = { id, channel -> pipelineBenchmarks.create(id, channel) },

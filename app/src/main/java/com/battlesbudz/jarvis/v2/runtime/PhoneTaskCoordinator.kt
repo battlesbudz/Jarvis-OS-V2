@@ -6,6 +6,8 @@ import com.battlesbudz.jarvis.v2.actions.ActionRequest
 import com.battlesbudz.jarvis.v2.actions.ActionTurnPlan
 import com.battlesbudz.jarvis.v2.actions.AdmitResult
 import com.battlesbudz.jarvis.v2.actions.AndroidToolCapabilityProbe
+import com.battlesbudz.jarvis.v2.actions.BrowserApprovalAdmission
+import com.battlesbudz.jarvis.v2.actions.BrowserNavigationPolicy
 import com.battlesbudz.jarvis.v2.actions.ExecutionResult
 import com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionExecutor
@@ -55,7 +57,9 @@ internal class PhoneTaskCoordinator(
     private val projectReply: (conversationId: String, replyId: String, text: String, receipts: List<ActionReceipt>) -> Unit,
     private val silentWork: SilentWorkController,
     private val recordDiagnostic: (String) -> Unit,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Main
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main,
+    /** M4: the shared browser session; null when the browser runtime path is not installed. */
+    private val browserSession: com.battlesbudz.jarvis.v2.actions.BrowserSession? = null
 ) {
     private val ledger by lazy(ledgerFactory)
     val tasks = MutableStateFlow<ToolTaskJournal?>(null)
@@ -190,6 +194,42 @@ internal class PhoneTaskCoordinator(
         }
     }
 
+    /**
+     * M4: a model-proposed browse_submit never auto-dispatches (D11). Park
+     * it in the ledger awaiting the user's explicit approval; the panel's
+     * Approve button then admits the browser submission for the exact page
+     * the user reviewed, and the executor re-validates against the live DOM
+     * at dispatch (a changed page fails closed). Returns a truthful
+     * not-yet receipt, never a success.
+     */
+    fun parkBrowseSubmitForApproval(request: ActionRequest, conversationId: String): ExecutionResult {
+        val session = browserSession
+            ?: return ExecutionResult(false, "The browser isn't available right now.")
+        return try {
+            val group = ledger.admit(listOf(request), conversationId)
+            val attempt = ledger.get(group.attemptIds.single())
+                ?: return ExecutionResult(false,
+                    "I couldn't save the browser submission, so I didn't start it.")
+            ledger.requestApproval(attempt.id, attempt.generation, "native",
+                MobileToolCatalog.VERSION)
+            refreshPhoneTasks()
+            recordDiagnostic("Browser submission parked for approval: group=${group.id}")
+            val dest = request.arguments["token"]
+                ?.let { session.proposeSubmit(it)?.destination }
+                ?.let { BrowserNavigationPolicy.hostOf(it) }
+            ExecutionResult(false,
+                "I need your approval before I submit this form" +
+                    (dest?.let { " to $it" } ?: "") +
+                    ". Approve \"Submit the form\" in the phone tasks panel to continue.")
+        } catch (_: ToolTaskStorageException) {
+            ExecutionResult(false,
+                "I couldn't save the browser submission, so I didn't start it.")
+        } catch (_: IllegalArgumentException) {
+            ExecutionResult(false,
+                "I couldn't verify the requested browser submission.")
+        }
+    }
+
     /** Re-evaluate only at process startup or foreground/unlock; no periodic memory polling. */
     fun resumePhoneTasksAfterUnlock() {
         scope.launch(dispatcher) {
@@ -318,6 +358,24 @@ internal class PhoneTaskCoordinator(
                                 operationStatus(verdict.reason)
                                 refreshPhoneTasks()
                                 return@launch
+                            }
+                        }
+                        // M4: approving a browse_submit admits the browser
+                        // session's one-shot submission for the exact page
+                        // the user reviewed (D11). The dispatch below still
+                        // re-validates against the live DOM in confirmSubmit:
+                        // a page changed between approval and dispatch fails
+                        // closed with no submission.
+                        val browserAdmission = browserSession?.let { BrowserApprovalAdmission(it) }
+                        if (browserAdmission?.needsAdmission(a.request) == true) {
+                            when (val verdict = browserAdmission.admitForApproval(a, approval)) {
+                                is AdmitResult.Admitted -> Unit
+                                is AdmitResult.Denied -> {
+                                    operationStatus(verdict.reason)
+                                    refreshPhoneTasks()
+                                    return@launch
+                                }
+                                else -> Unit
                             }
                         }
                         val result = phoneActionPipeline(createExecutor()).executeAttempt(a, approval)

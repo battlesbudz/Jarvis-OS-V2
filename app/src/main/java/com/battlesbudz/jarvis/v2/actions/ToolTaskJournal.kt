@@ -56,6 +56,15 @@ internal fun ToolTaskJournal.frozen() = copy(
 /** Screen mutations are never routine-eligible and never auto-dispatched (D23). */
 internal val SCREEN_MUTATION_TOOLS = setOf("screen_tap", "screen_scroll", "screen_type")
 
+/**
+ * M4: browse_submit is never routine-eligible and never auto-dispatched
+ * (D11). Like screen mutations it may be admitted for tracking and parked
+ * for an exact approval; dispatch additionally requires the browser
+ * session's live admission ([BrowserSession.confirmSubmit] fails closed
+ * without it).
+ */
+internal val BROWSE_APPROVAL_TOOLS = setOf("browse_submit")
+
 /** No grant can expand these tools into arbitrary or consequential operations. */
 internal fun ActionRequest.isRoutineEligible() = when (name) {
     "read_battery" -> arguments.isEmpty()
@@ -83,9 +92,15 @@ internal fun ActionRequest.isRoutineEligible() = when (name) {
  * approval, whose consumption commits atomically with the dispatch claim in
  * [ToolTaskLedger.claim]. A changed target invalidates the prior approval via
  * [ToolTaskLedger.revise], so a stale approval can never authorize a dispatch.
+ *
+ * M4 browse_submit follows the same shape one step further out: never
+ * routine-eligible, dispatch-eligible only under an exact approval, and even
+ * then the browser session's own confirmSubmit gate must see a live
+ * admission for the reviewed page — the ledger claim alone never submits.
  */
 internal fun ActionRequest.isDispatchEligible(authority: ToolAuthority): Boolean =
-    isRoutineEligible() || (authority == ToolAuthority.EXACT_APPROVAL && name in SCREEN_MUTATION_TOOLS)
+    isRoutineEligible() || (authority == ToolAuthority.EXACT_APPROVAL &&
+        (name in SCREEN_MUTATION_TOOLS || name in BROWSE_APPROVAL_TOOLS))
 
 /** Human-readable label for the screen Stop overlay and approval prompts (M1d). */
 internal fun ActionRequest.describeForOverlay(): String = when (name) {
